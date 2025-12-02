@@ -1,0 +1,52 @@
+﻿@page "/"
+@inject NavigationManager Nav
+
+<div class="container d-flex flex-column justify-content-center align-items-center vh-100">
+    <div class="text-center mb-5">
+        <h1 class="display-3 fw-bold text-primary mb-3">CIPHER QUIZ</h1>
+        <p class="lead text-muted">Kriptografi bilginizi test edin.</p>
+    </div>
+
+    <div class="row g-4 w-100 justify-content-center" style="max-width: 800px;">
+        <div class="col-md-5">
+            <div class="card-clean h-100 text-center p-4">
+                <h3 class="mb-3">Yönetici</h3>
+                <p class="text-muted mb-4">Yeni bir oda kurun ve yarışmayı yönetin.</p>
+                <button class="btn btn-primary-clean w-100 btn-lg" @onclick='() => Nav.NavigateTo("/admin")'>
+                    Oda Kur
+                </button>
+            </div>
+        </div>
+
+        <div class="col-md-5">
+            <div class="card-clean h-100 text-center p-4">
+                <h3 class="mb-3">Oyuncu</h3>
+                <p class="text-muted mb-4">Mevcut bir odaya katılın ve yarışın.</p>
+                <div class="d-grid gap-2">
+                    <input @bind="roomCode" class="form-control text-center text-uppercase" placeholder="ODA KODU" maxlength="6" />
+                    <button class="btn btn-outline-primary w-100" @onclick="JoinRoom">
+                        Odaya Katıl
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mt-5">
+        <button class="btn btn-link text-muted text-decoration-none" @onclick='() => Nav.NavigateTo("/practice")'>
+            Pratik Modu &rarr;
+        </button>
+    </div>
+</div>
+
+@code {
+    private string roomCode = "";
+
+    private void JoinRoom()
+    {
+        if (!string.IsNullOrWhiteSpace(roomCode))
+        {
+            Nav.NavigateTo($"/room/{roomCode.ToUpper()}");
+        }
+    }
+}

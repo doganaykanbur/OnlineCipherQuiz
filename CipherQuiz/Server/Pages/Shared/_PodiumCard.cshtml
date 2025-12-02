@@ -1,0 +1,29 @@
+@model PodiumModel.Player
+@{
+    // Determine sizing & color by Rank
+    var rank = Model.Rank;
+    var isCenter = rank == 1;
+    string bgClass = rank==1 ? "podyum-gold" : (rank==2 ? "podyum-silver" : "podyum-bronze");
+    string sizeClass = isCenter ? "card-center" : "card-side";
+    string initials = Model.Username?.Trim().Length >= 2 ? Model.Username.Substring(0,2).ToUpper() : Model.Username?.ToUpper() ?? "NA";
+}
+<div role="listitem" aria-label="Player @Model.Username, rank @rank, score @Model.Score" class="podium-card @sizeClass @bgClass"
+     data-rank="@rank" tabindex="0">
+  <div class="avatar" aria-hidden="true">
+    @if(!string.IsNullOrEmpty(Model.AvatarUrl)) {
+      <img src="@Model.AvatarUrl" alt="@Model.Username avatar" class="avatar-img" />
+    } else {
+      <div class="avatar-initials" aria-hidden="true">@initials</div>
+    }
+  </div>
+
+  <div class="meta text-center">
+    <div class="username" aria-label="username">@Model.Username</div>
+    <div class="score" aria-label="score">@Model.Score pts</div>
+  </div>
+
+  @if(rank==1) {
+    <div class="trophy text-2xl mt-2" aria-hidden="true">🏆</div>
+  }
+
+</div>

@@ -1,0 +1,212 @@
+/* If Tailwind is present, most utility classes used in cshtml still apply.
+   This file provides animation keyframes, colors and reduced-motion rules. */
+
+/* Colors for podium */
+.podyum-gold {
+    background: linear-gradient(180deg, #FFD54A, #F0B90B);
+    color: #0b0b0b;
+}
+
+.podyum-silver {
+    background: linear-gradient(180deg, #E0E6EC, #BFC7CF);
+    color: #0b0b0b;
+}
+
+.podyum-bronze {
+    background: linear-gradient(180deg, #F0A463, #D57A2A);
+    color: #0b0b0b;
+}
+
+/* Sizes */
+.card-center {
+    width: 10rem;
+    height: 14rem;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(2, 6, 23, 0.25);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 1rem;
+    transform-origin: center bottom;
+}
+
+.card-side {
+    width: 8rem;
+    height: 10rem;
+    border-radius: 12px;
+    box-shadow: 0 6px 14px rgba(2, 6, 23, 0.18);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0.8rem;
+    transform-origin: center bottom;
+}
+
+/* Basic text */
+.username {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.score {
+    font-size: 0.85rem;
+    opacity: 0.9;
+}
+
+/* Avatar */
+.avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 999px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.4rem;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-initials {
+    font-weight: 700;
+}
+
+/* Hover scale */
+.podium-card {
+    transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.podium-card:focus,
+.podium-card:hover {
+    transform: scale(1.03);
+    outline: none;
+}
+
+/* Entrance animations */
+@keyframes podiumTranslateIn {
+    from {
+        transform: translateY(20px) scale(1);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes popScale {
+    0% {
+        transform: scale(1);
+    }
+
+    60% {
+        transform: scale(1.07);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes subtleSlide {
+    from {
+        transform: translateY(30px) scale(1);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0) scale(1.02);
+        opacity: 1;
+    }
+}
+
+@keyframes slowFade {
+    from {
+        transform: translateY(10px);
+        opacity: 0
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Variant-specific classes applied by JS on mount */
+.podium-animate .card-center {
+    animation: podiumTranslateIn 600ms ease-out both;
+}
+
+.podium-animate .card-side {
+    animation: podiumTranslateIn 600ms ease-out both;
+}
+
+.podium-animate.pop .card-center {
+    animation: podiumTranslateIn 600ms ease-out both, popScale 200ms ease both;
+}
+
+.podium-animate.pop .card-side {
+    animation: podiumTranslateIn 600ms ease-out both;
+}
+
+.podium-animate.subtle-slide .card-center {
+    animation: subtleSlide 900ms ease-in-out both;
+    transform-origin: center bottom;
+}
+
+.podium-animate.subtle-slide .card-side {
+    animation: subtleSlide 900ms ease-in-out both;
+}
+
+.podium-animate.slow-fade .card-center {
+    animation: slowFade 700ms ease both;
+}
+
+.podium-animate.slow-fade .card-side {
+    animation: slowFade 700ms ease both;
+}
+
+/* Remove any blinking animations used elsewhere for decorative fonts */
+@keyframes noneBlink {
+    0% {
+        opacity: 1
+    }
+
+    100% {
+        opacity: 1
+    }
+}
+
+h1,
+.decorative,
+.playfair {
+    animation: none !important;
+}
+
+/* Confetti canvas styling */
+.confetti-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+/* prefers-reduced-motion - disable all animations */
+@media (prefers-reduced-motion: reduce) {
+
+    .podium-animate .card-center,
+    .podium-animate .card-side,
+    .podium-card {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+}

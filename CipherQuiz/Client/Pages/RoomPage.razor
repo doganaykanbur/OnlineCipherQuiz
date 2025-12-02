@@ -1,0 +1,568 @@
+@page "/room/{RoomCode}"
+@using CipherQuiz.Shared
+@using CipherQuiz.Client.Services
+@using CipherQuiz.Client.Utils
+@inject RealtimeService Realtime
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IAsyncDisposable
+
+<div class="container py-4">
+    @if (string.IsNullOrEmpty(participantId))
+    {
+        <div class="d-flex flex-column justify-content-center align-items-center" style="min-height: 80vh;">
+            <div class="card-clean w-100" style="max-width:400px">
+                <h3 class="text-center mb-3">Odaya Katıl</h3>
+                <h5 class="text-center text-muted mb-4">@RoomCode</h5>
+                <div class="mb-3">
+                    <input @bind="displayName" class="form-control mb-2" placeholder="Görünen Adınız" />
+                    <button class="btn btn-primary-clean w-100" @onclick="Join">Katıl</button>
+                </div>
+            </div>
+        </div>
+    }
+    else if (!isApproved)
+    {
+        <div class="text-center mt-5">
+            <h2 class="text-muted">Onay Bekleniyor...</h2>
+            <div class="spinner-border text-primary mt-3" role="status"></div>
+        </div>
+    }
+    else if (!quizStarted)
+    {
+        <div class="text-center mt-5">
+            <h2>Hazır Olun!</h2>
+            <p class="lead">Quiz başlamak üzere...</p>
+        </div>
+    }
+    else if (isFinished)
+    {
+        <div class="text-center mt-5">
+            <h1 class="mb-4">Quiz Tamamlandı!</h1>
+            <h3>Puanınız: @currentScore.ToString("F0")</h3>
+            
+            <div class="mt-4">
+                <p class="text-muted">Yönetici sonuçları açıkladığında burada görünecektir.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Quiz Running Interface -->
+        <!-- Question Embedded -->
+        @if (currentQuestion != null)
+        {
+            <div class="card-clean card-appear">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-info text-dark">@currentQuestion.Topic</span>
+                        <span class="badge bg-secondary">Soru @currentQuestion.Position / @totalQuestions</span>
+                    </div>
+                    <div class="time-box @(timeLeft.TotalSeconds < 10 ? "urgent" : "")">
+                        @timeLeft.ToString(@"mm\:ss")
+                    </div>
+                </div>
+
+                <h4 class="mb-3 text-center">@currentQuestion.Prompt</h4>
+
+                <div class="text-center mb-3 @(strikeShake ? "strike-shake" : "")">
+                    <span class="strike-box @(currentStrikes >= 1 ? "active" : "")">X</span>
+                    <span class="strike-box @(currentStrikes >= 2 ? "active" : "")">X</span>
+                    @if (showPenalty)
+                    {
+                        <span class="penalty-badge">-40%</span>
+                    }
+                </div>
+
+                @if (currentQuestion.Data != null)
+                {
+                    var playfairKey = currentQuestion.Data.TryGetValue("Anahtar Kelime", out var pk) ? pk : "";
+                    <div class="bg-dark p-3 rounded mb-4 border border-secondary">
+                        @if (currentQuestion.Data.ContainsKey("Matrix_00"))
+                        {
+                            <div class="mb-3 text-light">
+                                <strong>Anahtar Matrisi:</strong>
+                                <div class="d-flex justify-content-center mt-2">
+                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; width: 100px;">
+                                        <div class="playfair-cell">@currentQuestion.Data["Matrix_00"]</div>
+                                        <div class="playfair-cell">@currentQuestion.Data["Matrix_01"]</div>
+                                        <div class="playfair-cell">@currentQuestion.Data["Matrix_10"]</div>
+                                        <div class="playfair-cell">@currentQuestion.Data["Matrix_11"]</div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        
+                        @if (currentQuestion.Data.ContainsKey("MixedAlphabet"))
+                        {
+                             <div class="mb-3 text-light">
+                                <strong>Alfabe Eşleşmesi:</strong>
+                                <div class="mt-2 text-center">
+                                    <div class="text-muted small mb-1">Düz Alfabe (A-Z)</div>
+                                    <div class="font-monospace text-warning" style="letter-spacing: 3px;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
+                                    <div class="text-muted small mt-2 mb-1">Karışık Alfabe</div>
+                                    <div class="font-monospace text-info" style="letter-spacing: 3px;">@currentQuestion.Data["MixedAlphabet"]</div>
+                                </div>
+                            </div>
+                        }
+
+                        @foreach (var d in currentQuestion.Data)
+                        {
+                            @if (d.Key.StartsWith("Matrix_") || d.Key == "MixedAlphabet") continue;
+
+                            @if (d.Key == "Matris")
+                            {
+                                var rows = d.Value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                                                  .Select(r => r.Trim())
+                                                  .Where(r => r.Length > 0)
+                                                  .ToList();
+                                <div class="mb-3 text-light">
+                                    <strong>@d.Key:</strong>
+                                    <div class="playfair-matrix-wrapper mt-2">
+                                        <div class="playfair-matrix">
+                                            @for (int r = 0; r < rows.Count; r++)
+                                            {
+                                                var row = rows[r];
+                                                for (int c = 0; c < row.Length; c++)
+                                                {
+                                                    var ch = row[c];
+                                                    var isKeyword = !string.IsNullOrEmpty(playfairKey) && (playfairKey.ToUpperInvariant().Contains(ch) || (ch == 'I' && playfairKey.ToUpperInvariant().Contains('J')));
+                                                    var delay = (r * row.Length + c) * 0.05;
+                                                    <div class="playfair-cell @(isKeyword ? "playfair-key-cell" : "")" style="animation-delay:@($"{delay:0.00}s")">@(ch == 'I' ? "I/J" : ch.ToString())</div>
+                                                }
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                            else if (d.Value.Contains("\n"))
+                            {
+                                <div class="mb-2 text-light">
+                                    <strong>@d.Key:</strong>
+                                    <pre class="font-monospace text-warning mb-0">@d.Value</pre>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="mb-1 text-light"><strong>@d.Key:</strong> <span class="font-monospace text-warning">@d.Value</span></div>
+                            }
+                        }
+                    </div>
+                }
+
+                <div class="mb-3">
+                    <label class="form-label text-muted small">@currentQuestion.InputHint</label>
+                    <input id="answerInput" @bind="answerInput" class="form-control form-control-lg" placeholder="Cevabınız..." @onkeyup="@CheckEnter" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(message))
+                {
+                    <div class="alert alert-danger py-2">@message</div>
+                }
+
+                <div class="d-flex gap-2 mt-4">
+                    <button class="btn btn-secondary flex-grow-1" @onclick="Skip">Atla (Sonra Çöz)</button>
+                    <button class="btn btn-primary-clean flex-grow-1" @onclick="Submit">Gönder</button>
+                </div>
+            </div>
+        }
+        else
+        {
+             <div class="text-center mt-5">
+                @if (!isQuizEnded)
+                {
+                    <div class="animate-pulse">
+                        <h3 class="text-info mb-3">Tüm soruları tamamladınız!</h3>
+                        <p class="lead text-muted">Diğer katılımcıların bitirmesi bekleniyor...</p>
+                        <div class="spinner-border text-primary mt-3" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <h3 class="text-success mb-3">Quiz Tamamlandı!</h3>
+                    <p>Sonuçlar açıklanıyor...</p>
+                }
+            </div>
+        }
+    }
+</div>
+
+@if (showResultsModal && finalScoreboard != null && finalScoreboard.Any())
+{
+    <div class="modal-backdrop-custom">
+        <div class="modal-content-custom modal-content-fullscreen">
+            <button class="btn-close-custom" @onclick="() => showResultsModal = false">×</button>
+            <div class="text-center w-100 h-100 d-flex flex-column justify-content-center">
+                <h2 class="mb-4 text-primary">Sonuçlar</h2>
+                <div class="podium-container podium-confetti flex-grow-1" style="max-height: 500px;">
+                    @if (finalScoreboard.Count >= 2)
+                    {
+                        <div class="podium-bar podium-2" style="height: 0; animation: growBar 1s ease-out forwards 0.5s;">
+                            <div>@finalScoreboard[1].DisplayName</div>
+                            <div class="fw-bold">@finalScoreboard[1].Score.ToString("F0")</div>
+                        </div>
+                    }
+                    @if (finalScoreboard.Count >= 1)
+                    {
+                        <div class="podium-bar podium-1" style="height: 0; animation: growBar 1s ease-out forwards 1.5s;">
+                            <div class="fs-4">1</div>
+                            <div>@finalScoreboard[0].DisplayName</div>
+                            <div class="fw-bold">@finalScoreboard[0].Score.ToString("F0")</div>
+                        </div>
+                    }
+                    @if (finalScoreboard.Count >= 3)
+                    {
+                        <div class="podium-bar podium-3" style="height: 0; animation: growBar 1s ease-out forwards 1s;">
+                            <div>@finalScoreboard[2].DisplayName</div>
+                            <div class="fw-bold">@finalScoreboard[2].Score.ToString("F0")</div>
+                        </div>
+                    }
+                </div>
+                
+                @if (finalScoreboard.Count > 3)
+                {
+                    <div class="mt-4 text-start mx-auto" style="max-width: 600px; width: 100%;">
+                        <h4 class="text-center mb-3">Diğer Katılımcılar</h4>
+                        <ul class="list-group" style="max-height: 200px; overflow-y: auto;">
+                            @for (int i = 3; i < finalScoreboard.Count; i++)
+                            {
+                                var s = finalScoreboard[i];
+                                <li class="list-group-item d-flex justify-content-between align-items-center" 
+                                    style="opacity: 0; animation: fadeInList 0.5s ease forwards @(2.5 + (i-3)*0.2)s">
+                                    <span>@(i + 1). @s.DisplayName</span>
+                                    <span class="fw-bold">@s.Score.ToString("F0")</span>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+
+@code {
+    [Parameter] public string RoomCode { get; set; } = "";
+    private string displayName = "";
+    private string participantId = "";
+    private bool isApproved = false;
+    private bool quizStarted = false;
+    private bool isFinished = false;
+    private bool showResultsModal = false;
+    
+    private List<QuestionState> questionsQueue = new();
+    private QuestionState? currentQuestion;
+    private string answerInput = "";
+    private string message = "";
+    private double currentScore = 0;
+    private int currentStrikes = 0;
+    private int totalQuestions = 0;
+    private int completedCount = 0;
+    
+    private TimeSpan timeLeft;
+    private System.Threading.Timer? timer;
+    private DateTime endTime;
+
+    private List<ScoreboardEntryDto>? finalScoreboard;
+
+    private DotNetObjectReference<ProctoringBridge>? proctorRef;
+    private bool showScoreToast = false;
+    private double lastScoreDelta = 0;
+    private bool strikeShake = false;
+    private bool showPenalty = false;
+
+    private bool isUserFinished = false;
+    private bool isQuizEnded = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Realtime.StartConnection();
+            
+            Realtime.OnJoinApproved += async () => 
+            { 
+                isApproved = true; 
+                StateHasChanged(); 
+                try 
+                {
+                    proctorRef = DotNetObjectReference.Create(new ProctoringBridge(Realtime, RoomCode, participantId));
+                    await JS.InvokeVoidAsync("startProctoring", proctorRef);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Proctoring error: " + ex.Message);
+                }
+            };
+            
+            Realtime.OnJoinRejected += (reason) => { participantId = ""; displayName = ""; message = reason; StateHasChanged(); };
+            
+            Realtime.OnQuizStarted += async (t, c) => 
+            { 
+                quizStarted = true; 
+                isQuizEnded = false;
+                isUserFinished = false;
+                endTime = t.AddMinutes(c.TimeLimitMinutes);
+                StartTimer();
+                await LoadQuestions();
+                try { await JS.InvokeVoidAsync("toggleFullScreen"); } catch {}
+                StateHasChanged(); 
+            };
+            
+            Realtime.OnQuizFinished += () => 
+            { 
+                isQuizEnded = true; 
+                isFinished = true; // For compatibility
+                StopTimer(); 
+                StateHasChanged(); 
+            };
+            
+            Realtime.OnScoreboardUpdated += (list) => 
+            {
+                if (isQuizEnded) 
+                {
+                    finalScoreboard = list;
+                    StateHasChanged();
+                }
+            };
+            
+            Realtime.OnRoomClosed += async () => 
+            { 
+                message = "Oda yönetici tarafından kapatıldı."; 
+                isQuizEnded = true; 
+                isFinished = true;
+                StopTimer(); 
+                currentQuestion = null;
+                questionsQueue.Clear();
+                StateHasChanged(); 
+                await Task.Delay(3000);
+                Nav.NavigateTo("/");
+            };
+            
+            Realtime.OnKicked += async (reason) => 
+            { 
+                message = reason; 
+                isQuizEnded = true;
+                isFinished = true;
+                StopTimer(); 
+                currentQuestion = null;
+                questionsQueue.Clear();
+                StateHasChanged(); 
+                await Task.Delay(3000);
+                Nav.NavigateTo("/");
+            };
+            
+            Realtime.OnShowResults += () => InvokeAsync(() => { showResultsModal = true; StateHasChanged(); });
+        }
+        catch (Exception ex)
+        {
+            message = "Error initializing: " + ex.Message;
+            StateHasChanged();
+        }
+    }
+
+    // ... (Join, LoadQuestions, NextQuestion same as before)
+
+    private async Task Submit()
+    {
+        if (currentQuestion == null || isUserFinished) return;
+
+        var result = await Realtime.SubmitAnswer(RoomCode, participantId, currentQuestion.Id, answerInput);
+        
+        if (result.IsCorrect)
+        {
+            currentScore += result.ScoreAwarded;
+            completedCount++;
+            if (questionsQueue.Count > 0) questionsQueue.RemoveAt(0);
+            lastScoreDelta = result.ScoreAwarded;
+            _ = HandleScoreToast();
+            
+            if (result.IsFinished)
+            {
+                 isUserFinished = true;
+                 StopTimer();
+                 currentQuestion = null;
+                 questionsQueue.Clear();
+                 StateHasChanged();
+                 return;
+            }
+            
+            await NextQuestion();
+        }
+        else
+        {
+            currentStrikes++;
+            strikeShake = true;
+            _ = HandleStrikeShake();
+            
+            if (result.Message.Contains("iptal") || currentStrikes >= 3)
+            {
+                message = "Soru iptal oldu!";
+                await Task.Delay(1000);
+                completedCount++;
+                if (questionsQueue.Count > 0) questionsQueue.RemoveAt(0);
+                
+                if (result.IsFinished)
+                {
+                     isUserFinished = true;
+                     StopTimer();
+                     currentQuestion = null;
+                     questionsQueue.Clear();
+                     StateHasChanged();
+                     return;
+                }
+
+                await NextQuestion();
+            }
+            else
+            {
+                if (currentStrikes == 1)
+                {
+                    showPenalty = true;
+                    _ = HandlePenaltyToast();
+                }
+                message = "Yanlis cevap! Tekrar deneyin.";
+            }
+        }
+    }
+
+    // ... (Helpers)
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try {
+                await JS.InvokeVoidAsync("eval", "var el = document.getElementById('blazor-error-ui'); if(el) el.style.display = 'none';");
+            } catch {}
+        }
+    }
+
+    private async Task Join()
+    {
+        if (string.IsNullOrWhiteSpace(displayName)) return;
+        participantId = await Realtime.RequestJoin(RoomCode, displayName);
+    }
+
+    private async Task LoadQuestions()
+    {
+        var list = await Realtime.GetQuestions(RoomCode, participantId);
+        questionsQueue = list.OrderBy(x => x.Position).ToList();
+        totalQuestions = questionsQueue.Count;
+        await NextQuestion();
+    }
+
+    private async Task NextQuestion()
+    {
+        if (questionsQueue.Count == 0)
+        {
+            currentQuestion = null;
+            // Wait for finish signal or just show waiting
+            return;
+        }
+
+        currentQuestion = questionsQueue[0];
+        currentStrikes = currentQuestion.Attempts; // Should be 0 initially
+        answerInput = "";
+        message = "";
+        await JS.InvokeVoidAsync("focusAnswer", "answerInput");
+    }
+
+
+
+    private async Task HandleScoreToast()
+    {
+        showScoreToast = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        showScoreToast = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleStrikeShake()
+    {
+        await Task.Delay(300);
+        strikeShake = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandlePenaltyToast()
+    {
+        await Task.Delay(1200);
+        showPenalty = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void StartTimer()
+    {
+        timer = new System.Threading.Timer(_ => 
+        {
+            var remaining = endTime - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                timeLeft = TimeSpan.Zero;
+                StopTimer();
+                _ = InvokeAsync(() => 
+                {
+                    // Auto submit or finish?
+                    // Ideally call server to finish, but server handles time too?
+                    // For now just show finish screen locally
+                    isFinished = true;
+                    StateHasChanged();
+                });
+            }
+            else
+            {
+                timeLeft = remaining;
+                _ = InvokeAsync(StateHasChanged);
+            }
+        }, null, 0, 1000);
+    }
+
+    private void StopTimer()
+    {
+        timer?.Dispose();
+        timer = null;
+    }
+
+    private void Skip()
+    {
+        if (questionsQueue.Count > 1)
+        {
+            var q = questionsQueue[0];
+            questionsQueue.RemoveAt(0);
+            questionsQueue.Add(q); // Move to end
+            NextQuestion();
+        }
+        else
+        {
+            message = "Atlanacak başka soru yok!";
+        }
+    }
+
+    private async Task CheckEnter(KeyboardEventArgs e)
+    {
+        if (e.Code == "Enter" || e.Code == "NumpadEnter")
+        {
+            await Submit();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopTimer();
+        if (proctorRef != null)
+        {
+            await JS.InvokeVoidAsync("stopProctoring");
+            proctorRef.Dispose();
+        }
+    }
+}
+
+@if (showScoreToast)
+{
+    <div class="score-toast">+@lastScoreDelta.ToString("F0") puan</div>
+}

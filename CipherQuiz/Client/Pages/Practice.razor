@@ -1,0 +1,79 @@
+@page "/practice"
+@using CipherQuiz.Shared
+@inject HttpClient Http
+
+<div class="container py-4">
+    <h2 class="neon-text text-center mb-4">PRATİK MODU</h2>
+
+    @if (questions == null)
+    {
+        <div class="text-center">
+            <button class="btn btn-neon" @onclick="LoadQuestions">Başla (5 Soru)</button>
+        </div>
+    }
+    else if (currentIndex < questions.Count)
+    {
+        var q = questions[currentIndex];
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card-neon p-4">
+                    <h4>@q.Topic: @q.Prompt</h4>
+                    @if (q.Data != null)
+                    {
+                        <div class="my-3">
+                            @foreach (var d in q.Data)
+                            {
+                                <div class="badge bg-dark border border-info p-2 me-2">@d.Key: @d.Value</div>
+                            }
+                        </div>
+                    }
+                    <input @bind="answer" class="input-neon mb-3" placeholder="Cevap" />
+                    <button class="btn btn-neon" @onclick="CheckAnswer">Kontrol Et</button>
+                    <div class="mt-2">@msg</div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="text-center">
+            <h3>Bitti! Skor: @score</h3>
+            <button class="btn btn-neon" @onclick="LoadQuestions">Tekrar Oyna</button>
+        </div>
+    }
+</div>
+
+@code {
+    List<QuestionState>? questions;
+    int currentIndex = 0;
+    string answer = "";
+    string msg = "";
+    int score = 0;
+
+    async Task LoadQuestions()
+    {
+        questions = await Http.GetFromJsonAsync<List<QuestionState>>("api/questions/practice");
+        currentIndex = 0;
+        score = 0;
+        msg = "";
+    }
+
+    void CheckAnswer()
+    {
+        var q = questions![currentIndex];
+        // In practice mode, we might receive CorrectAnswer (insecure but simple) or validate on server.
+        // Since QuestionState has CorrectAnswer property but we shouldn't trust client in real game.
+        // In practice, it's fine.
+        if (string.Equals(q.CorrectAnswer, answer, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 10;
+            currentIndex++;
+            answer = "";
+            msg = "Doğru!";
+        }
+        else
+        {
+            msg = "Yanlış, tekrar dene.";
+        }
+    }
+}
