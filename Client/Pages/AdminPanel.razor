@@ -76,7 +76,7 @@
                             <label class="form-label">Süre (Dakika)</label>
                             <input type="number" class="form-control" @bind="timeLimitMinutes" min="1" max="120" />
                         </div>
-                        <button class="btn btn-primary-clean w-100 mb-2 btn-glow" @onclick="UpdateConfig">Ayarları Kaydet</button>
+
                         <button class="btn btn-success w-100 btn-glow" @onclick="StartQuiz">Quiz'i Başlat</button>
                     }
                     else if (isStarted)
@@ -87,13 +87,11 @@
                     else
                     {
                         <div class="alert alert-info bg-opacity-25 bg-info text-white border-info">Quiz Tamamlandı</div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" @bind="detailedExport" id="detailedExportCheck">
-                            <label class="form-check-label" for="detailedExportCheck">Detaylı Rapor</label>
-                        </div>
+
                         <div class="d-grid gap-2">
-                            <a href="api/results/@roomCode/xlsx?adminToken=@adminToken&detailed=@detailedExport" target="_blank" class="btn btn-success btn-glow">Excel İndir</a>
-                            <a href="api/results/@roomCode/pdf?adminToken=@adminToken&detailed=@detailedExport" target="_blank" class="btn btn-danger btn-glow">PDF İndir</a>
+                            <a href="api/results/@roomCode/xlsx?adminToken=@adminToken&detailed=false" target="_blank" class="btn btn-success btn-glow">Excel İndir</a>
+                            <a href="api/results/@roomCode/pdf?adminToken=@adminToken&detailed=false" target="_blank" class="btn btn-danger btn-glow">PDF İndir (Özet)</a>
+                            <a href="api/results/@roomCode/full-pdf?adminToken=@adminToken" target="_blank" class="btn btn-warning btn-glow text-dark">Detaylı PDF (Tümü)</a>
                             <button class="btn btn-outline-primary btn-glow" @onclick="TriggerShowResults">Sonuçları Gör</button>
                         </div>
                     }
@@ -158,6 +156,10 @@
                                     <button class="btn btn-sm @(participantAlerts.ContainsKey(p.ParticipantId) && participantAlerts[p.ParticipantId] ? "btn-link text-danger animate-blink" : "btn-link text-warning") p-0 ms-2" @onclick="() => ShowLogs(p.ParticipantId)" title="Logları Gör">
                                         <span class="oi oi-warning" aria-hidden="true">!</span>
                                     </button>
+                                    <button class="btn btn-sm btn-link text-info p-0 ms-2" @onclick="() => ShowDetails(p.ParticipantId)" title="Detayları Gör">
+                                        <span class="oi oi-list" aria-hidden="true">&#9776;</span>
+                                    </button>
+
                                 </span>
                                 
                                 <div class="d-flex align-items-center gap-2 ms-auto">
@@ -240,18 +242,135 @@
 
     @if (showLogModal)
     {
-        <div class="modal-backdrop-custom">
-            <div class="modal-content-custom" style="max-width: 600px; background: #13283f; border: 1px solid #00bfff;">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="text-info">Kullanıcı Logları: @selectedLogUser</h5>
-                    <button class="btn-close-custom" @onclick="() => showLogModal = false">×</button>
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.8);">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-animate-pop">
+                <div class="modal-content cyber-card border-info text-light">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title text-info">Kullanıcı Logları: @selectedLogUser</h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="() => showLogModal = false"></button>
+                    </div>
+                    <div class="modal-body bg-dark p-3" style="font-family: 'Courier New', monospace; color: #e0f4ff; min-height: 300px;">
+                        @if (selectedUserLogs.Count == 0) { <div class="text-muted text-center mt-4">Henüz log kaydı yok.</div> }
+                        @foreach(var log in selectedUserLogs)
+                        {
+                            <div class="border-bottom border-secondary py-2">@log</div>
+                        }
+                    </div>
                 </div>
-                <div class="bg-dark p-3 rounded border border-secondary" style="height: 400px; overflow-y:auto; font-family: 'Courier New', monospace; color: #e0f4ff;">
-                    @if (selectedUserLogs.Count == 0) { <div class="text-muted text-center mt-4">Henüz log kaydı yok.</div> }
-                    @foreach(var log in selectedUserLogs)
-                    {
-                        <div class="border-bottom border-secondary py-2">@log</div>
-                    }
+            </div>
+        </div>
+    }
+
+    @if (showDetailsModal)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.8);">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg modal-animate-pop">
+                <div class="modal-content border-info text-light" style="background-color: #05101a; border: 1px solid #004080; box-shadow: 0 0 20px rgba(0, 64, 128, 0.5);">
+                    <div class="modal-header border-secondary" style="background-color: #081420;">
+                        <div>
+                            <h5 class="modal-title text-info fw-bold">Detaylı Rapor: @selectedDetailsUser</h5>
+                            <span class="badge bg-warning text-dark mt-1">Toplam Puan: @selectedParticipantDetails.Where(x => x.IsSolved).Sum(x => x.RemainingScore).ToString("F0")</span>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => showDetailsModal = false" style="font-weight: bold; width: 30px; height: 30px; padding: 0; line-height: 0;">X</button>
+                    </div>
+                    <div class="modal-body p-3" style="color: #e0f4ff; background-color: #05101a;">
+                        @if (selectedParticipantDetails.Count == 0) { <div class="text-muted text-center mt-4">Veri yok.</div> }
+                        @foreach(var q in selectedParticipantDetails.OrderBy(x => x.Position))
+                        {
+                            <div class="card mb-3 border-secondary" style="background-color: #0b1c2e;">
+                                <div class="card-body">
+                                    <h6 class="card-title text-warning">Soru @q.Position: @q.Topic</h6>
+                                    <p class="card-text">@q.Prompt</p>
+                                    
+                                    @if(q.Data != null)
+                                    {
+                                        <div class="bg-dark p-2 rounded mb-3 border border-secondary bg-opacity-50">
+                                            @{ var playfairKey = q.Data.TryGetValue("Anahtar Kelime", out var pk) ? pk : ""; }
+
+                                            @if (q.Data.ContainsKey("Matrix_00"))
+                                            {
+                                                <div class="mb-2 text-light">
+                                                    <strong>Anahtar Matrisi:</strong>
+                                                    <div class="d-flex justify-content-start mt-2">
+                                                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; width: 100px;">
+                                                            <div class="playfair-cell">@q.Data["Matrix_00"]</div>
+                                                            <div class="playfair-cell">@q.Data["Matrix_01"]</div>
+                                                            <div class="playfair-cell">@q.Data["Matrix_10"]</div>
+                                                            <div class="playfair-cell">@q.Data["Matrix_11"]</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                            
+                                            @if (q.Data.ContainsKey("MixedAlphabet"))
+                                            {
+                                                 <div class="mb-2 text-light">
+                                                    <strong>Alfabe Eşleşmesi:</strong>
+                                                    <div class="mt-2">
+                                                        <div class="text-muted small mb-1">Düz Alfabe (A-Z)</div>
+                                                        <div class="font-monospace text-warning small" style="letter-spacing: 2px; word-break: break-all;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
+                                                        <div class="text-muted small mt-2 mb-1">Karışık Alfabe</div>
+                                                        <div class="font-monospace text-info small" style="letter-spacing: 2px; word-break: break-all;">@q.Data["MixedAlphabet"]</div>
+                                                    </div>
+                                                </div>
+                                            }
+
+                                            @foreach (var d in q.Data)
+                                            {
+                                                @if (d.Key.StartsWith("Matrix_") || d.Key == "MixedAlphabet") continue;
+
+                                                @if (d.Key == "Matris")
+                                                {
+                                                    var rows = d.Value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                                                                      .Select(r => r.Trim())
+                                                                      .Where(r => r.Length > 0)
+                                                                      .ToList();
+                                                    <div class="mb-2 text-light">
+                                                        <strong>@d.Key:</strong>
+                                                        <div class="playfair-matrix-wrapper mt-2 justify-content-start">
+                                                            <div class="playfair-matrix">
+                                                                @for (int r = 0; r < rows.Count; r++)
+                                                                {
+                                                                    var row = rows[r];
+                                                                    for (int c = 0; c < row.Length; c++)
+                                                                    {
+                                                                        var ch = row[c];
+                                                                        var isKeyword = !string.IsNullOrEmpty(playfairKey) && (playfairKey.ToUpperInvariant().Contains(ch) || (ch == 'I' && playfairKey.ToUpperInvariant().Contains('J')));
+                                                                        <div class="playfair-cell @(isKeyword ? "playfair-key-cell" : "")">@(ch == 'I' ? "I/J" : ch.ToString())</div>
+                                                                    }
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="mb-1 text-light small"><strong>@d.Key:</strong> <span class="font-monospace text-warning">@d.Value</span></div>
+                                                }
+                                            }
+                                        </div>
+                                    }
+
+                                    <div class="row mt-2">
+                                        <div class="col-md-6">
+                                            <div class="p-2 rounded @(q.IsSolved ? "bg-success bg-opacity-25" : "bg-danger bg-opacity-25")">
+                                                <strong>Verilen Cevap:</strong> @(string.IsNullOrEmpty(q.UserAnswer) ? "-" : q.UserAnswer)
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="p-2 rounded bg-info bg-opacity-10">
+                                                <strong>Doğru Cevap:</strong> @q.CorrectAnswer
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2 small d-flex gap-3">
+                                        <span class="badge bg-secondary">Deneme: @q.Attempts</span>
+                                        <span class="badge bg-secondary">Kazanılan Puan: @(q.IsSolved ? q.RemainingScore.ToString("F1") : "0")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
         </div>
@@ -264,7 +383,7 @@
     private string adminName = "Admin";
     private string roomCode = "";
     private string adminToken = "";
-    private bool detailedExport = false;
+
 
     private bool isStarted = false;
     private bool isFinished = false;
@@ -279,6 +398,13 @@
     private bool showLogModal = false;
     private string selectedLogUser = "";
     private List<string> selectedUserLogs = new();
+
+    private bool showDetailsModal = false;
+    private string selectedDetailsUser = "";
+    private List<QuestionState> selectedParticipantDetails = new();
+    
+
+
     private bool ShowPodium = false;
 
     private Dictionary<string, bool> participantAlerts = new();
@@ -293,7 +419,8 @@
         Realtime.OnProctorEventReceived += (pid, ev) => InvokeAsync(() =>
         {
             if (!userLogsMap.ContainsKey(pid)) userLogsMap[pid] = new List<string>();
-            userLogsMap[pid].Insert(0, $"[{ev.TimestampUtc.ToShortTimeString()}] {ev.Type}");
+            var content = string.IsNullOrEmpty(ev.Content) ? "" : $": {ev.Content}";
+            userLogsMap[pid].Insert(0, $"[{ev.TimestampUtc.ToLocalTime().ToString("HH:mm:ss")}] {ev.Type}{content}");
             
             // Set alert if modal not open for this user
             if (!showLogModal || selectedLogUser != (participants.FirstOrDefault(x => x.ParticipantId == pid)?.DisplayName ?? pid))
@@ -354,6 +481,14 @@
         else
             selectedUserLogs = new List<string>();
         showLogModal = true;
+    }
+
+    private async Task ShowDetails(string pid)
+    {
+        var p = participants.FirstOrDefault(x => x.ParticipantId == pid);
+        selectedDetailsUser = p?.DisplayName ?? pid;
+        selectedParticipantDetails = await Realtime.GetParticipantDetails(roomCode, adminToken, pid);
+        showDetailsModal = true;
     }
 
     private async Task UpdateConfig()

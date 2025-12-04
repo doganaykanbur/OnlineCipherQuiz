@@ -7,7 +7,9 @@ window.proctoring = {
         document.addEventListener('paste', this.handleEvent);
         document.addEventListener('contextmenu', this.handleEvent);
         document.addEventListener('keydown', this.handleKey);
+        document.addEventListener('keyup', this.handleKeyUp);
         document.addEventListener('visibilitychange', this.handleVisibility);
+        document.addEventListener('fullscreenchange', this.handleFullscreen);
         window.addEventListener('blur', this.handleBlur);
         window.addEventListener('focus', this.handleFocus);
     },
@@ -17,9 +19,12 @@ window.proctoring = {
         document.removeEventListener('paste', this.handleEvent);
         document.removeEventListener('contextmenu', this.handleEvent);
         document.removeEventListener('visibilitychange', this.handleVisibility);
+        document.removeEventListener('fullscreenchange', this.handleFullscreen);
         window.removeEventListener('blur', this.handleBlur);
         window.removeEventListener('focus', this.handleFocus);
+        window.removeEventListener('focus', this.handleFocus);
         document.removeEventListener('keydown', this.handleKey);
+        document.removeEventListener('keyup', this.handleKeyUp);
         this.dotNetRef = null;
         this.hideToast();
     },
@@ -30,9 +35,14 @@ window.proctoring = {
             window.proctoring.showToast('Kopya engellendi');
         }
         if (window.proctoring.dotNetRef) {
+            let msg = e.type;
+            if (e.type === 'copy') msg = 'Kopyalama Denemesi';
+            if (e.type === 'paste') msg = 'Yapıştırma Denemesi';
+            if (e.type === 'contextmenu') msg = 'Sağ Tık Denemesi';
+
             window.proctoring.dotNetRef.invokeMethodAsync('OnProctorEvent', {
-                type: e.type,
-                content: '',
+                type: msg,
+                content: 'Engellendi',
                 timestampUtc: new Date().toISOString()
             });
         }
@@ -40,9 +50,22 @@ window.proctoring = {
 
     handleVisibility: function () {
         if (window.proctoring.dotNetRef) {
+            const msg = document.hidden ? 'Sekme Alta Alındı / Gizlendi' : 'Sekme Tekrar Açıldı';
             window.proctoring.dotNetRef.invokeMethodAsync('OnProctorEvent', {
-                type: 'visibility',
-                content: document.hidden ? 'hidden' : 'visible',
+                type: 'Sekme Durumu',
+                content: msg,
+                timestampUtc: new Date().toISOString()
+            });
+        }
+    },
+
+    handleFullscreen: function () {
+        if (window.proctoring.dotNetRef) {
+            const isFull = document.fullscreenElement !== null;
+            const msg = isFull ? 'Tam Ekrana Geçildi' : 'Tam Ekrandan Çıkıldı (Force F11)';
+            window.proctoring.dotNetRef.invokeMethodAsync('OnProctorEvent', {
+                type: 'Ekran Durumu',
+                content: msg,
                 timestampUtc: new Date().toISOString()
             });
         }
@@ -51,8 +74,8 @@ window.proctoring = {
     handleBlur: function () {
         if (window.proctoring.dotNetRef) {
             window.proctoring.dotNetRef.invokeMethodAsync('OnProctorEvent', {
-                type: 'blur',
-                content: 'window_blur',
+                type: 'Odak Durumu',
+                content: 'Pencere Odak Kaybı (Başka uygulamaya geçildi)',
                 timestampUtc: new Date().toISOString()
             });
         }
@@ -61,27 +84,44 @@ window.proctoring = {
     handleFocus: function () {
         if (window.proctoring.dotNetRef) {
             window.proctoring.dotNetRef.invokeMethodAsync('OnProctorEvent', {
-                type: 'focus',
-                content: 'window_focus',
+                type: 'Odak Durumu',
+                content: 'Pencere Odağı Geri Geldi',
                 timestampUtc: new Date().toISOString()
             });
         }
     },
 
     handleKey: function (e) {
+        if (window.proctoring.isKeyDown) return;
+
         const isCopy = e.ctrlKey && (e.key === 'c' || e.key === 'C');
         const isPaste = e.ctrlKey && (e.key === 'v' || e.key === 'V');
-        if (isCopy || isPaste) {
+        const isF12 = e.key === 'F12';
+
+        if (isCopy || isPaste || isF12) {
             e.preventDefault();
-            window.proctoring.showToast('Kopya engellendi');
+            window.proctoring.isKeyDown = true;
+
+            const msg = isF12 ? 'Geliştirici araçları engellendi' : 'Kopya engellendi';
+            window.proctoring.showToast(msg);
+
             if (window.proctoring.dotNetRef) {
+                let type = 'Kısayol Engellendi';
+                if (isCopy) type = 'Kopyalama Denemesi';
+                if (isPaste) type = 'Yapıştırma Denemesi';
+                if (isF12) type = 'Geliştirici Araçları';
+
                 window.proctoring.dotNetRef.invokeMethodAsync('OnProctorEvent', {
-                    type: isCopy ? 'copy' : 'paste',
-                    content: 'blocked',
+                    type: type,
+                    content: isF12 ? 'F12 Tuşu Engellendi' : 'Kısayol Tuşu Engellendi',
                     timestampUtc: new Date().toISOString()
                 });
             }
         }
+    },
+
+    handleKeyUp: function (e) {
+        window.proctoring.isKeyDown = false;
     },
 
     showToast: function (text) {

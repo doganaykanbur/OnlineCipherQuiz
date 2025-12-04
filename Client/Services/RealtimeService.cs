@@ -9,7 +9,7 @@ namespace CipherQuiz.Client.Services
         private HubConnection? _hubConnection;
         private readonly NavigationManager _navigationManager;
 
-        private HubConnection HubConnection => _hubConnection ?? throw new InvalidOperationException("Realtime connection has not been started.");
+        public HubConnection Hub => _hubConnection ?? throw new InvalidOperationException("Realtime connection has not been started.");
 
         public event Action? OnJoinApproved;
         public event Action<string>? OnJoinRejected;
@@ -54,53 +54,69 @@ namespace CipherQuiz.Client.Services
 
         // Admin Methods
         public async Task<CreateRoomResult> CreateRoom(string name, string adminName) 
-            => await HubConnection.InvokeAsync<CreateRoomResult>("CreateRoom", name, adminName);
+            => await Hub.InvokeAsync<CreateRoomResult>("CreateRoom", name, adminName);
 
         public async Task UpdateConfig(string roomCode, string token, QuizConfig config)
-            => await HubConnection.InvokeAsync("UpdateConfig", roomCode, token, config);
+            => await Hub.InvokeAsync("UpdateConfig", roomCode, token, config);
 
         public async Task StartQuiz(string roomCode, string token)
-            => await HubConnection.InvokeAsync("StartQuiz", roomCode, token);
+            => await Hub.InvokeAsync("StartQuiz", roomCode, token);
 
         public async Task FinishQuiz(string roomCode, string token)
-            => await HubConnection.InvokeAsync("FinishQuiz", roomCode, token);
+            => await Hub.InvokeAsync("FinishQuiz", roomCode, token);
             
         public async Task Approve(string roomCode, string token, string pid)
-            => await HubConnection.InvokeAsync("Approve", roomCode, token, pid);
+            => await Hub.InvokeAsync("Approve", roomCode, token, pid);
 
         public async Task Reject(string roomCode, string token, string pid)
-            => await HubConnection.InvokeAsync("Reject", roomCode, token, pid);
+            => await Hub.InvokeAsync("Reject", roomCode, token, pid);
 
         public async Task<RoomState?> ResumeAdmin(string roomCode, string token)
-            => await HubConnection.InvokeAsync<RoomState?>("ResumeAdmin", roomCode, token);
+            => await Hub.InvokeAsync<RoomState?>("ResumeAdmin", roomCode, token);
 
         public async Task CloseRoom(string roomCode, string token)
-            => await HubConnection.InvokeAsync("CloseRoom", roomCode, token);
+            => await Hub.InvokeAsync("CloseRoom", roomCode, token);
 
         public async Task ApproveAll(string roomCode, string token)
-            => await HubConnection.InvokeAsync("ApproveAll", roomCode, token);
+            => await Hub.InvokeAsync("ApproveAll", roomCode, token);
 
         public async Task KickParticipant(string roomCode, string token, string pid)
-            => await HubConnection.InvokeAsync("KickParticipant", roomCode, token, pid);
+            => await Hub.InvokeAsync("KickParticipant", roomCode, token, pid);
 
         public async Task ShowResults(string roomCode, string token)
-            => await HubConnection.InvokeAsync("ShowResults", roomCode, token);
+            => await Hub.InvokeAsync("ShowResults", roomCode, token);
+
+        public async Task<List<QuestionState>> GetParticipantDetails(string roomCode, string token, string pid)
+            => await Hub.InvokeAsync<List<QuestionState>>("GetParticipantDetails", roomCode, token, pid);
 
         // Participant Methods
-        public async Task<string> RequestJoin(string roomCode, string displayName)
-            => await HubConnection.InvokeAsync<string>("RequestJoin", roomCode, displayName);
+        public async Task<string> RequestJoin(string roomCode, string displayName, string? pid = null)
+            => await Hub.InvokeAsync<string>("RequestJoin", roomCode, displayName, pid);
+
+        public async Task<bool> JoinRoom(string roomCode, string displayName, string pid)
+        {
+            try
+            {
+                await RequestJoin(roomCode, displayName, pid);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         public async Task<ResumeStatus> ResumeParticipant(string roomCode, string pid)
-            => await HubConnection.InvokeAsync<ResumeStatus>("ResumeParticipant", roomCode, pid);
+            => await Hub.InvokeAsync<ResumeStatus>("ResumeParticipant", roomCode, pid);
 
         public async Task<List<QuestionState>> GetQuestions(string roomCode, string pid)
-            => await HubConnection.InvokeAsync<List<QuestionState>>("GetQuestions", roomCode, pid);
+            => await Hub.InvokeAsync<List<QuestionState>>("GetQuestions", roomCode, pid);
 
         public async Task<AnswerResultDto> SubmitAnswer(string roomCode, string pid, string questionId, string answer)
-            => await HubConnection.InvokeAsync<AnswerResultDto>("SubmitAnswer", roomCode, pid, questionId, answer);
+            => await Hub.InvokeAsync<AnswerResultDto>("SubmitAnswer", roomCode, pid, questionId, answer);
 
         public async Task ReportProctorEvent(string roomCode, string pid, ProctorEventInbound ev)
-            => await HubConnection.InvokeAsync("ReportProctorEvent", roomCode, pid, ev);
+            => await Hub.InvokeAsync("ReportProctorEvent", roomCode, pid, ev);
 
         public async ValueTask DisposeAsync()
         {

@@ -63,6 +63,9 @@ namespace CipherQuiz.Shared
 
         public int Total => Questions.Count;
         public int Completed => Math.Min(CurrentIndex, Total);
+
+        public DateTime? StartUtc { get; set; }
+        public int TimeLimitMinutes { get; set; }
     }
 
     public class QuestionState
@@ -85,6 +88,9 @@ namespace CipherQuiz.Shared
 
         public int Position { get; set; }
         public int Total { get; set; }
+
+        public string UserAnswer { get; set; } = string.Empty;
+        public bool IsSolved { get; set; }
     }
 
     public class ProctorEvent

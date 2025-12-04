@@ -37,5 +37,15 @@ namespace CipherQuiz.Server.Controllers
             var file = _exportService.GeneratePdf(data, detailed);
             return File(file, "application/pdf", $"Results_{roomCode}.pdf");
         }
+
+        [HttpGet("{roomCode}/full-pdf")]
+        public async Task<IActionResult> GetFullPdf(string roomCode, [FromQuery] string adminToken)
+        {
+            var room = await _roomStore.GetRoomAsync(roomCode);
+            if (room == null || room.AdminToken != adminToken) return Unauthorized();
+
+            var file = _exportService.GenerateFullDetailsPdf(room);
+            return File(file, "application/pdf", $"FullReport_{roomCode}.pdf");
+        }
     }
 }

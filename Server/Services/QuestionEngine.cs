@@ -67,13 +67,13 @@ namespace CipherQuiz.Server.Services
             {
                 Topic = "Caesar",
                 Prompt = encode
-                    ? $"\"{plain}\" kelimesini {shift} kaydırarak şifreleyin."
-                    : $"Aşağıdaki metin Caesar şifrelemesi ile şifrelenmiştir. Şifreyi çözün.",
+                    ? $"Aşağıdaki \"{plain}\" metnini, {shift} birim öteleme kullanarak Sezar (Caesar) şifreleme yöntemiyle şifreleyiniz."
+                    : $"Aşağıdaki metin Sezar (Caesar) şifreleme yöntemiyle şifrelenmiştir. Şifreyi çözerek orijinal metni bulunuz.",
                 InputHint = encode ? "Şifreli metni girin" : "Düz metni girin (Büyük harf)",
                 InputType = "text",
                 Data = encode
-                    ? new Dictionary<string, string> { { "Kaydırma", $"+{shift}" } }
-                    : new Dictionary<string, string> { { "Şifreli Metin", cipher }, { "Kaydırma", $"+{shift}" } },
+                    ? new Dictionary<string, string> { { "Kaydırma", $"+{shift}" }, { "Alfabe İndeksleri", GetAlphabetIndices() } }
+                    : new Dictionary<string, string> { { "Şifreli Metin", cipher }, { "Kaydırma", $"+{shift}" }, { "Alfabe İndeksleri", GetAlphabetIndices() } },
                 CorrectAnswer = encode ? cipher : plain,
                 Attempts = 0
             };
@@ -90,13 +90,13 @@ namespace CipherQuiz.Server.Services
             {
                 Topic = "Vigenere",
                 Prompt = encode
-                    ? $"Anahtar '{key}' ile \"{plain}\" kelimesini şifreleyin."
-                    : $"Anahtar '{key}' kullanılarak şifrelenmiş metni çözün.",
+                    ? $"\"{plain}\" metnini, '{key}' anahtar kelimesini kullanarak Vigenere şifreleme yöntemiyle şifreleyiniz."
+                    : $"Aşağıdaki metin '{key}' anahtarı kullanılarak Vigenere yöntemiyle şifrelenmiştir. Şifreyi çözünüz.",
                 InputHint = encode ? "Şifreli metni yazın" : "Düz metni girin",
                 InputType = "text",
                 Data = encode
-                    ? new Dictionary<string, string> { { "Anahtar", key } }
-                    : new Dictionary<string, string> { { "Anahtar", key }, { "Şifreli Metin", cipher } },
+                    ? new Dictionary<string, string> { { "Anahtar", key }, { "Alfabe İndeksleri", GetAlphabetIndices() } }
+                    : new Dictionary<string, string> { { "Anahtar", key }, { "Şifreli Metin", cipher }, { "Alfabe İndeksleri", GetAlphabetIndices() } },
                 CorrectAnswer = encode ? cipher : plain,
                 Attempts = 0
             };
@@ -111,7 +111,7 @@ namespace CipherQuiz.Server.Services
             return new QuestionState
             {
                 Topic = "Base64",
-                Prompt = encode ? $"\"{plain}\" kelimesini Base64 olarak kodlayın." : "Aşağıdaki Base64 kodlanmış metni çözün.",
+                Prompt = encode ? $"\"{plain}\" metnini Base64 formatına kodlayınız." : "Aşağıda verilen Base64 kodlu metnin orijinal halini bulunuz.",
                 InputHint = encode ? "Encoded çıktıyı yazın" : "Düz metin",
                 InputType = "text",
                 Data = encode ? new Dictionary<string, string>() : new Dictionary<string, string> { { "Encoded", encoded } },
@@ -137,7 +137,7 @@ namespace CipherQuiz.Server.Services
             return new QuestionState
             {
                 Topic = "Xor",
-                Prompt = $"{Format(val1, fmt)} XOR {Format(val2, fmt2)} işleminin sonucu nedir? (Decimal)",
+                Prompt = $"Aşağıdaki {Format(val1, fmt)} ve {Format(val2, fmt2)} değerlerinin XOR işleminin sonucunu onluk (decimal) tabanda yazınız.",
                 InputHint = "Sayı girin",
                 InputType = "number",
                 Data = new Dictionary<string, string> { { "Val1", Format(val1, fmt) }, { "Val2", Format(val2, fmt2) } },
@@ -167,8 +167,8 @@ namespace CipherQuiz.Server.Services
             {
                 Topic = "Hill",
                 Prompt = encode
-                    ? "Anahtar matrisi ile verilen düz metni şifreleyin."
-                    : "Hill şifrelemesi ile şifrelenmiş metni çözün. Anahtar matrisi verilmiştir.",
+                    ? "Aşağıda verilen anahtar matrisini kullanarak düz metni Hill şifreleme yöntemiyle şifreleyiniz."
+                    : "Aşağıdaki metin Hill yöntemiyle şifrelenmiştir. Verilen anahtar matrisini kullanarak şifreyi çözünüz.",
                 InputHint = encode ? "Şifreli metni yazın" : "Düz metin",
                 InputType = "text",
                 Data = encode
@@ -176,13 +176,15 @@ namespace CipherQuiz.Server.Services
                     {
                         { "Matrix_00", a.ToString() }, { "Matrix_01", b.ToString() },
                         { "Matrix_10", c.ToString() }, { "Matrix_11", d.ToString() },
-                        { "Düz Metin", plain }
+                        { "Düz Metin", plain },
+                        { "Alfabe İndeksleri", GetAlphabetIndices() }
                     }
                     : new Dictionary<string, string> 
                     { 
                         { "Matrix_00", a.ToString() }, { "Matrix_01", b.ToString() },
                         { "Matrix_10", c.ToString() }, { "Matrix_11", d.ToString() },
-                        { "Şifreli Metin", cipher } 
+                        { "Şifreli Metin", cipher },
+                        { "Alfabe İndeksleri", GetAlphabetIndices() }
                     },
                 CorrectAnswer = encode ? cipher : plain,
                 Attempts = 0
@@ -205,8 +207,8 @@ namespace CipherQuiz.Server.Services
             {
                 Topic = "Monoalphabetic",
                 Prompt = encode
-                    ? $"Aşağıdaki alfabe eşleşmesini kullanarak \"{plain}\" metnini şifreleyin."
-                    : "Aşağıdaki alfabe eşleşmesini kullanarak şifrelenmiş metni çözün.",
+                    ? $"Aşağıdaki karışık alfabe tablosunu kullanarak \"{plain}\" metnini Monoalfabetik yöntemle şifreleyiniz."
+                    : "Aşağıdaki karışık alfabe tablosunu kullanarak şifrelenmiş metni çözünüz.",
                 InputHint = encode ? "Şifreli metin" : "Düz metin",
                 InputType = "text",
                 Data = encode 
@@ -239,8 +241,8 @@ namespace CipherQuiz.Server.Services
             {
                 Topic = "Playfair",
                 Prompt = encode
-                    ? $"Anahtar '{key}' ile \"{plain}\" ifadesini Playfair ile şifreleyin."
-                    : "Playfair şifrelemesi ile şifrelenmiş metni çözün. Anahtar kelime verilmiştir.",
+                    ? $"'{key}' anahtar kelimesiyle oluşturulan Playfair matrisini kullanarak \"{plain}\" metnini şifreleyiniz."
+                    : "Aşağıdaki metin Playfair yöntemiyle şifrelenmiştir. Verilen anahtar kelime ve matrisi kullanarak şifreyi çözünüz.",
                 InputHint = encode ? "Şifreli metni yazın" : "Düz metin (X'leri dahil edin)",
                 InputType = "text",
                 Data = encode
@@ -272,7 +274,7 @@ namespace CipherQuiz.Server.Services
             return new QuestionState
             {
                 Topic = "Transposition",
-                Prompt = encode ? $"Anahtar '{key}' ile metni şifreleyin." : "Transposition (Sütun) şifrelemesi ile şifrelenmiş metni çözün.",
+                Prompt = encode ? $"\"{plain}\" metnini, '{key}' anahtarını kullanarak Sütunlu Yer Değiştirme (Columnar Transposition) yöntemiyle şifreleyiniz." : "Aşağıdaki metin Sütunlu Yer Değiştirme (Columnar Transposition) yöntemiyle şifrelenmiştir. Şifreyi çözünüz.",
                 InputHint = encode ? "Şifreli metni yazın" : "Düz metin",
                 InputType = "text",
                 Data = encode
@@ -353,6 +355,11 @@ namespace CipherQuiz.Server.Services
                 }
             }
             return output;
+        }
+
+        private string GetAlphabetIndices()
+        {
+            return "A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9, K=10, L=11, M=12, N=13, O=14, P=15, Q=16, R=17, S=18, T=19, U=20, V=21, W=22, X=23, Y=24, Z=25";
         }
     }
 }

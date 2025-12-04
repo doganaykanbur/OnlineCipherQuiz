@@ -2,6 +2,7 @@
 @using CipherQuiz.Shared
 @using CipherQuiz.Client.Services
 @using CipherQuiz.Client.Utils
+@using Microsoft.AspNetCore.SignalR.Client
 @inject RealtimeService Realtime
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -17,6 +18,10 @@
                 <div class="mb-3">
                     <input @bind="displayName" class="form-control mb-2" placeholder="Görünen Adınız" />
                     <button class="btn btn-primary-clean w-100" @onclick="Join">Katıl</button>
+                    @if (!string.IsNullOrEmpty(restoreMessage))
+                    {
+                        <div class="text-warning mt-2 small text-center">@restoreMessage</div>
+                    }
                 </div>
             </div>
         </div>
@@ -55,8 +60,15 @@
             <div class="card-clean card-appear">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                     <div class="d-flex align-items-center gap-2">
-                        <span class="badge bg-info text-dark">@currentQuestion.Topic</span>
-                        <span class="badge bg-secondary">Soru @currentQuestion.Position / @totalQuestions</span>
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="d-flex align-items-center justify-content-center bg-warning text-dark fw-bold rounded-circle shadow-lg" style="width: 50px; height: 50px; font-size: 1.2rem; border: 2px solid #fff;">
+                                @currentQuestion.Position
+                            </div>
+                            <div class="d-flex flex-column">
+                                <span class="text-uppercase text-muted small fw-bold" style="letter-spacing: 1px;">Konu</span>
+                                <span class="text-info fs-4 fw-bold text-shadow">@currentQuestion.Topic</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="time-box @(timeLeft.TotalSeconds < 10 ? "urgent" : "")">
                         @timeLeft.ToString(@"mm\:ss")
@@ -106,9 +118,19 @@
                             </div>
                         }
 
+                        @if (currentQuestion.Data.ContainsKey("Alfabe İndeksleri"))
+                        {
+                            <div class="mb-3 text-light">
+                                <strong>Alfabe İndeksleri:</strong>
+                                <div class="mt-2 p-2 bg-dark rounded border border-secondary text-info small font-monospace text-wrap" style="word-break: break-word;">
+                                    @currentQuestion.Data["Alfabe İndeksleri"]
+                                </div>
+                            </div>
+                        }
+
                         @foreach (var d in currentQuestion.Data)
                         {
-                            @if (d.Key.StartsWith("Matrix_") || d.Key == "MixedAlphabet") continue;
+                            @if (d.Key.StartsWith("Matrix_") || d.Key == "MixedAlphabet" || d.Key == "Alfabe İndeksleri") continue;
 
                             @if (d.Key == "Matris")
                             {
@@ -248,6 +270,7 @@
     [Parameter] public string RoomCode { get; set; } = "";
     private string displayName = "";
     private string participantId = "";
+    private string restoreMessage = "";
     private bool isApproved = false;
     private bool quizStarted = false;
     private bool isFinished = false;
@@ -282,6 +305,73 @@
         try
         {
             await Realtime.StartConnection();
+
+            // Try restore session
+            var storedId = await JS.InvokeAsync<string>("localStorage.getItem", $"quiz_pid_{RoomCode.ToUpper()}");
+            var storedName = await JS.InvokeAsync<string>("localStorage.getItem", $"quiz_name_{RoomCode.ToUpper()}");
+
+            if (!string.IsNullOrEmpty(storedId) && !string.IsNullOrEmpty(storedName))
+            {
+                // Attempt to reconnect
+                var state = await Realtime.Hub.InvokeAsync<ParticipantQuizState?>("GetState", RoomCode, storedId);
+                if (state != null)
+                {
+                    participantId = storedId;
+                    displayName = storedName;
+                    isApproved = true; // If we have state, we are approved
+                    
+                    // Restore local state from server state
+                    currentScore = state.Score;
+                    totalQuestions = state.Questions.Count;
+                    completedCount = state.Questions.Count(q => q.IsSolved || q.Attempts >= 3);
+                    
+                    // Filter out finished questions
+                    questionsQueue = state.Questions.Where(q => !q.IsSolved && q.Attempts < 3).OrderBy(q => q.Position).ToList();
+                    
+                    if (questionsQueue.Any())
+                    {
+                        currentQuestion = questionsQueue[0];
+                        // Restore question specific state if needed (e.g. strikes)
+                        currentStrikes = currentQuestion.Attempts;
+                    }
+                    else
+                    {
+                        isUserFinished = true;
+                        isFinished = true;
+                    }
+
+                    // Restore Timer
+                    if (state.StartUtc.HasValue)
+                    {
+                        quizStarted = true;
+                        endTime = state.StartUtc.Value.AddMinutes(state.TimeLimitMinutes);
+                        // If time passed, finish
+                        if (DateTime.UtcNow > endTime)
+                        {
+                            isQuizEnded = true;
+                            isFinished = true;
+                        }
+                        else
+                        {
+                            StartTimer();
+                        }
+                    }
+
+                    // Start proctoring again
+                    try 
+                    {
+                        proctorRef = DotNetObjectReference.Create(new ProctoringBridge(Realtime, RoomCode, participantId));
+                        await JS.InvokeVoidAsync("startProctoring", proctorRef);
+                    }
+                    catch {}
+                    
+                    // Check if quiz is running
+                    // We need a way to know if quiz is started. 
+                    // Ideally GetState should return Room status too, or we assume if we have questions it might be started.
+                    // For now, let's just set quizStarted = true if we have questions or if we are finished.
+                    quizStarted = true; 
+                }
+            }
             
             Realtime.OnJoinApproved += async () => 
             { 
@@ -366,6 +456,25 @@
 
     // ... (Join, LoadQuestions, NextQuestion same as before)
 
+    private async Task Join()
+    {
+        if (string.IsNullOrWhiteSpace(displayName)) return;
+        
+        // Generate ID if not exists (new join)
+        if (string.IsNullOrEmpty(participantId)) participantId = Guid.NewGuid().ToString();
+
+        var success = await Realtime.JoinRoom(RoomCode, displayName, participantId);
+        if (success)
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", $"quiz_pid_{RoomCode.ToUpper()}", participantId);
+            await JS.InvokeVoidAsync("localStorage.setItem", $"quiz_name_{RoomCode.ToUpper()}", displayName);
+        }
+        else
+        {
+            restoreMessage = "Odaya katılınamadı veya oda yok.";
+        }
+    }
+
     private async Task Submit()
     {
         if (currentQuestion == null || isUserFinished) return;
@@ -441,11 +550,7 @@
         }
     }
 
-    private async Task Join()
-    {
-        if (string.IsNullOrWhiteSpace(displayName)) return;
-        participantId = await Realtime.RequestJoin(RoomCode, displayName);
-    }
+
 
     private async Task LoadQuestions()
     {
@@ -528,14 +633,14 @@
         timer = null;
     }
 
-    private void Skip()
+    private async Task Skip()
     {
         if (questionsQueue.Count > 1)
         {
             var q = questionsQueue[0];
             questionsQueue.RemoveAt(0);
             questionsQueue.Add(q); // Move to end
-            NextQuestion();
+            await NextQuestion();
         }
         else
         {

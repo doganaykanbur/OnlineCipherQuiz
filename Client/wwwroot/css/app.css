@@ -444,7 +444,7 @@ h1:focus-visible {
 }
 
 body {
-    background-color: #050505;
+    background-color: #0f172a;
     color: var(--text-color);
     font-family: 'Space Grotesk', 'Inter', sans-serif;
     background-image:
@@ -549,4 +549,20 @@ body {
 
 .animate-blink {
     animation: blinkRed 1s infinite;
+}
+
+.modal-animate-pop {
+    animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes popIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }

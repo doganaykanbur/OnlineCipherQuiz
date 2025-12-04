@@ -174,15 +174,42 @@ namespace CipherQuiz.Server.Hubs
             }
         }
 
+        public async Task<List<QuestionState>> GetParticipantDetails(string roomCode, string adminToken, string participantId)
+        {
+            var room = await ValidateAdmin(roomCode, adminToken);
+            if (room == null) return new List<QuestionState>();
+
+            if (room.Quiz.TryGetValue(participantId, out var pState))
+            {
+                return pState.Questions;
+            }
+            return new List<QuestionState>();
+        }
+
         // --- Participant Methods ---
 
-        public async Task<string> RequestJoin(string roomCode, string displayName)
+        public async Task<string> RequestJoin(string roomCode, string displayName, string? participantId = null)
         {
             var room = await _roomStore.GetRoomAsync(roomCode);
             if (room == null) throw new HubException("Room not found");
 
+            // Check if exists
+            if (!string.IsNullOrEmpty(participantId))
+            {
+                var existing = room.Participants.FirstOrDefault(x => x.ParticipantId == participantId);
+                if (existing != null)
+                {
+                    existing.ConnectionId = Context.ConnectionId;
+                    existing.DisplayName = displayName; // Update name if changed
+                    await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
+                    await _roomStore.UpdateRoomAsync(room);
+                    return existing.ParticipantId;
+                }
+            }
+
             var p = new Participant
             {
+                ParticipantId = !string.IsNullOrEmpty(participantId) ? participantId : Guid.NewGuid().ToString(),
                 ConnectionId = Context.ConnectionId,
                 DisplayName = displayName,
                 IsApproved = false
@@ -223,6 +250,21 @@ namespace CipherQuiz.Server.Hubs
             return (ResumeStatus)Enum.Parse(typeof(ResumeStatus), room.State.ToString());
         }
 
+        public async Task<ParticipantQuizState?> GetState(string roomCode, string participantId)
+        {
+            var room = await _roomStore.GetRoomAsync(roomCode);
+            if (room == null) return null;
+            
+            if (room.Quiz.TryGetValue(participantId, out var state))
+            {
+                state.StartUtc = room.StartUtc;
+                state.TimeLimitMinutes = room.Config.TimeLimitMinutes;
+                return state;
+            }
+            return null;
+        }
+
+
         public async Task<List<QuestionState>> GetQuestions(string roomCode, string participantId)
         {
             var room = await _roomStore.GetRoomAsync(roomCode);
@@ -242,7 +284,8 @@ namespace CipherQuiz.Server.Hubs
                     Position = q.Position, 
                     Total = q.Total,
                     RemainingScore = q.RemainingScore,
-                    Attempts = q.Attempts
+                    Attempts = q.Attempts,
+                    IsSolved = q.IsSolved
                 }).ToList();
             }
             return new List<QuestionState>();
@@ -291,7 +334,8 @@ namespace CipherQuiz.Server.Hubs
                 if (correct)
                 {
                     pState.Score += q.RemainingScore;
-                    q.CorrectAnswer = ""; // Disable further answers
+                    q.UserAnswer = ans;
+                    q.IsSolved = true; // Mark as solved
                     pState.CurrentIndex++; // Move to next question index logically for tracking
                     
                     bool finished = CheckIfFinished(pState);
@@ -306,6 +350,7 @@ namespace CipherQuiz.Server.Hubs
                     }
 
                     await BroadcastScoreboard(room);
+                    await _roomStore.UpdateRoomAsync(room);
                     return new AnswerResultDto 
                     { 
                         IsCorrect = true, 
@@ -337,6 +382,7 @@ namespace CipherQuiz.Server.Hubs
                             }
                         }
                         await BroadcastScoreboard(room);
+                        await _roomStore.UpdateRoomAsync(room);
 
                         return new AnswerResultDto 
                         { 
@@ -347,6 +393,8 @@ namespace CipherQuiz.Server.Hubs
                         };
                     }
                     
+                    q.UserAnswer = ans; // Store last wrong answer
+                    await _roomStore.UpdateRoomAsync(room);
                     return new AnswerResultDto 
                     { 
                         IsCorrect = false, 
@@ -360,10 +408,8 @@ namespace CipherQuiz.Server.Hubs
 
         private bool CheckIfFinished(ParticipantQuizState pState)
         {
-            // Simple check: are all questions either solved (CorrectAnswer cleared) or failed (Attempts >= 3)?
-            // This is a bit hacky. Better to have a status flag on QuestionState.
-            // Let's assume if user solved or failed all, they are finished.
-            return pState.Questions.All(q => string.IsNullOrEmpty(q.CorrectAnswer) || q.Attempts >= 3);
+            // Simple check: are all questions either solved (IsSolved) or failed (Attempts >= 3)?
+            return pState.Questions.All(q => q.IsSolved || q.Attempts >= 3);
         }
 
         public async Task ReportProctorEvent(string roomCode, string participantId, ProctorEventInbound ev)
@@ -376,6 +422,8 @@ namespace CipherQuiz.Server.Hubs
 
              var log = new ProctorEvent { Type = ev.Type, Content = ev.Content, TimestampUtc = ev.TimestampUtc };
              room.ProctorLogs[participantId].Add(log);
+
+             await _roomStore.UpdateRoomAsync(room);
 
              // Notify admin
              await Clients.Group(roomCode + "_Admin").SendAsync("ProctorEvent", participantId, log);
