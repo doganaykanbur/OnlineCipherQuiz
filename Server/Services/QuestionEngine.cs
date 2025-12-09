@@ -281,12 +281,14 @@ namespace CipherQuiz.Server.Services
                     ? new Dictionary<string, string> 
                     { 
                         { "Anahtar Kelime", key },
-                        { "Düz Metin", plain } 
+                        { "Düz Metin", plain },
+                        { "Alfabe İndeksleri", GetAlphabetIndices() }
                     }
                     : new Dictionary<string, string> 
                     { 
                         { "Anahtar Kelime", key },
-                        { "Şifreli Metin", cipher } 
+                        { "Şifreli Metin", cipher },
+                        { "Alfabe İndeksleri", GetAlphabetIndices() }
                     },
                 CorrectAnswer = encode ? cipher : plain,
                 Attempts = 0

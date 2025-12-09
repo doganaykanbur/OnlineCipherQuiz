@@ -209,6 +209,20 @@
             </div>
         }
     }
+    
+    @if (waitingForFullscreen)
+    {
+        <div class="modal-backdrop-custom" style="background: rgba(0,0,0,0.95); z-index: 9999;">
+            <div class="d-flex flex-column justify-content-center align-items-center h-100 w-100 animate-fade-in-up">
+                <h1 class="text-primary mb-5 display-1 fw-bold glow-text" style="font-size: 5rem;">QUIZ BAŞLIYOR</h1>
+                <button class="btn btn-primary-clean btn-lg px-5 py-4 fs-2 btn-glow rounded-pill border-2" 
+                        style="min-width: 300px; letter-spacing: 5px; box-shadow: 0 0 50px rgba(0,191,255,0.3);"
+                        @onclick="EnterQuiz">
+                    BAŞLA
+                </button>
+            </div>
+        </div>
+    }
 </div>
 
 @if (showResultsModal && finalScoreboard != null && finalScoreboard.Any())
@@ -275,6 +289,7 @@
     private bool quizStarted = false;
     private bool isFinished = false;
     private bool showResultsModal = false;
+    private bool waitingForFullscreen = false;
     
     private List<QuestionState> questionsQueue = new();
     private QuestionState? currentQuestion;
@@ -398,7 +413,7 @@
                 endTime = t.AddMinutes(c.TimeLimitMinutes);
                 StartTimer();
                 await LoadQuestions();
-                try { await JS.InvokeVoidAsync("toggleFullScreen"); } catch {}
+                waitingForFullscreen = true; // Wait for user interaction
                 StateHasChanged(); 
             };
             
@@ -654,6 +669,13 @@
         {
             await Submit();
         }
+    }
+
+    private async Task EnterQuiz()
+    {
+        waitingForFullscreen = false;
+        try { await JS.InvokeVoidAsync("toggleFullScreen"); } catch {}
+        StateHasChanged();
     }
 
     public async ValueTask DisposeAsync()

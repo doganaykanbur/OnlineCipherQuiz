@@ -521,8 +521,8 @@
         }
     }
     private string GetInviteLink() => Nav.ToAbsoluteUri($"/room/{roomCode}").ToString();
-    private async Task CopyCode() => await JS.InvokeVoidAsync("navigator.clipboard.writeText", roomCode);
-    private async Task CopyLink() => await JS.InvokeVoidAsync("navigator.clipboard.writeText", GetInviteLink());
+    private async Task CopyCode() => await JS.InvokeVoidAsync("copyToClipboard", roomCode);
+    private async Task CopyLink() => await JS.InvokeVoidAsync("copyToClipboard", GetInviteLink());
 
     private async Task TriggerShowResults() => await Realtime.ShowResults(roomCode, adminToken);
 

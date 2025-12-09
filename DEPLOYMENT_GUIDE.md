@@ -6,6 +6,9 @@ Projeyi bir sunucuya (Windows veya Linux) aktarmak için aşağıdaki adımları
 
 ---
 
+> [!IMPORTANT]
+> **HTTPS Gerekliliği**: Uygulama, Pano (Clipboard) ve Tam Ekran (Fullscreen) API'lerini yoğun olarak kullanır. Modern tarayıcılar bu özelliklerin tam fonksiyonlu çalışması için **HTTPS (Güvenli Bağlantı)** zorunluluğu koşabilir. Yerel ağda (HTTP) çalışırken bazı özellikler için yedek mekanizmalar (fallback) devreye girse de, prodüksiyon ortamında mutlaka SSL sertifikası kullanılması önerilir.
+
 ## 1. Projeyi Yayınlama (Publish)
 
 Öncelikle projenin "Release" sürümünü oluşturmanız gerekir. Bu işlem, gereksiz dosyaları temizler ve projeyi çalışmaya hazır hale getirir.
