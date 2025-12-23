@@ -44,10 +44,10 @@
     {
         <div class="text-center mt-5">
             <h1 class="mb-4">Quiz Tamamlandı!</h1>
-            <h3>Puanınız: @currentScore.ToString("F0")</h3>
+            <h3>@(GetText("YourScore")): @currentScore.ToString("F0")</h3>
             
             <div class="mt-4">
-                <p class="text-muted">Yönetici sonuçları açıkladığında burada görünecektir.</p>
+                <p class="text-muted">@(GetText("WaitingResults"))</p>
             </div>
         </div>
     }
@@ -65,7 +65,7 @@
                                 @currentQuestion.Position
                             </div>
                             <div class="d-flex flex-column">
-                                <span class="text-uppercase text-muted small fw-bold" style="letter-spacing: 1px;">Konu</span>
+                                <span class="text-uppercase text-muted small fw-bold" style="letter-spacing: 1px;">@(GetText("Topic"))</span>
                                 <span class="text-info fs-4 fw-bold text-shadow">@currentQuestion.Topic</span>
                             </div>
                         </div>
@@ -80,15 +80,11 @@
                 <div class="text-center mb-3 @(strikeShake ? "strike-shake" : "")">
                     <span class="strike-box @(currentStrikes >= 1 ? "active" : "")">X</span>
                     <span class="strike-box @(currentStrikes >= 2 ? "active" : "")">X</span>
-                    @if (showPenalty)
-                    {
-                        <span class="penalty-badge">-40%</span>
-                    }
+                    <!-- Penalty Removed -->
                 </div>
 
                 @if (currentQuestion.Data != null)
                 {
-                    var playfairKey = currentQuestion.Data.TryGetValue("Anahtar Kelime", out var pk) ? pk : "";
                     <div class="bg-dark p-3 rounded mb-4 border border-secondary">
                         @if (currentQuestion.Data.ContainsKey("Matrix_00"))
                         {
@@ -108,31 +104,32 @@
                         @if (currentQuestion.Data.ContainsKey("MixedAlphabet"))
                         {
                              <div class="mb-3 text-light">
-                                <strong>Alfabe Eşleşmesi:</strong>
+                                <strong>@(language == "en" ? "Alphabet Mapping" : "Alfabe Eşleşmesi"):</strong>
                                 <div class="mt-2 text-center">
-                                    <div class="text-muted small mb-1">Düz Alfabe (A-Z)</div>
+                                    <div class="text-muted small mb-1">@(language == "en" ? "Plain Alphabet (A-Z)" : "Düz Alfabe (A-Z)")</div>
                                     <div class="font-monospace text-warning" style="letter-spacing: 3px;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
-                                    <div class="text-muted small mt-2 mb-1">Karışık Alfabe</div>
+                                    <div class="text-muted small mt-2 mb-1">@(language == "en" ? "Mixed Alphabet" : "Karışık Alfabe")</div>
                                     <div class="font-monospace text-info" style="letter-spacing: 3px;">@currentQuestion.Data["MixedAlphabet"]</div>
                                 </div>
                             </div>
                         }
 
-                        @if (currentQuestion.Data.ContainsKey("Alfabe İndeksleri"))
+                        @if (currentQuestion.Data.ContainsKey("Alfabe İndeksleri") || currentQuestion.Data.ContainsKey("Alphabet Indices"))
                         {
+                            var indicesKey = currentQuestion.Data.ContainsKey("Alfabe İndeksleri") ? "Alfabe İndeksleri" : "Alphabet Indices";
                             <div class="mb-3 text-light">
-                                <strong>Alfabe İndeksleri:</strong>
+                                <strong>@(language == "en" ? "Alphabet Indices" : "Alfabe İndeksleri"):</strong>
                                 <div class="mt-2 p-2 bg-dark rounded border border-secondary text-info small font-monospace text-wrap" style="word-break: break-word;">
-                                    @currentQuestion.Data["Alfabe İndeksleri"]
+                                    @currentQuestion.Data[indicesKey]
                                 </div>
                             </div>
                         }
 
                         @foreach (var d in currentQuestion.Data)
                         {
-                            @if (d.Key.StartsWith("Matrix_") || d.Key == "MixedAlphabet" || d.Key == "Alfabe İndeksleri") continue;
+                            @if (d.Key.StartsWith("Matrix_") || d.Key == "MixedAlphabet" || d.Key == "Alfabe İndeksleri" || d.Key == "Alphabet Indices") continue;
 
-                            @if (d.Key == "Matris")
+                            @if (d.Key == "Matris" || d.Key == "Matrix")
                             {
                                 var rows = d.Value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                                                   .Select(r => r.Trim())
@@ -148,9 +145,9 @@
                                                 for (int c = 0; c < row.Length; c++)
                                                 {
                                                     var ch = row[c];
-                                                    var isKeyword = !string.IsNullOrEmpty(playfairKey) && (playfairKey.ToUpperInvariant().Contains(ch) || (ch == 'I' && playfairKey.ToUpperInvariant().Contains('J')));
+                                                    // var isKeyword = !string.IsNullOrEmpty(playfairKey) && (playfairKey.ToUpperInvariant().Contains(ch) || (ch == 'I' && playfairKey.ToUpperInvariant().Contains('J')));
                                                     var delay = (r * row.Length + c) * 0.05;
-                                                    <div class="playfair-cell @(isKeyword ? "playfair-key-cell" : "")" style="animation-delay:@($"{delay:0.00}s")">@(ch == 'I' ? "I/J" : ch.ToString())</div>
+                                                    <div class="playfair-cell" style="animation-delay:@($"{delay:0.00}s")">@(ch == 'I' ? "I/J" : ch.ToString())</div>
                                                 }
                                             }
                                         </div>
@@ -173,8 +170,24 @@
                 }
 
                 <div class="mb-3">
-                    <label class="form-label text-muted small">@currentQuestion.InputHint</label>
-                    <input id="answerInput" @bind="answerInput" class="form-control form-control-lg" placeholder="Cevabınız..." @onkeyup="@CheckEnter" />
+                    @if (currentQuestion.InputType == "caesar_analysis")
+                    {
+                         <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label text-muted small">@(language == "en" ? "Shift Amount" : "Kaydırma Miktarı")</label>
+                                <input type="number" @bind="caesarShiftInput" class="form-control form-control-lg text-center" placeholder="#" />
+                            </div>
+                             <div class="col-md-8">
+                                <label class="form-label text-muted small">@(language == "en" ? "Plaintext" : "Düz Metin")</label>
+                                <input type="text" @bind="caesarPlainInput" class="form-control form-control-lg" placeholder="@(language == "en" ? "Enter plaintext" : "Düz metni girin")" @onkeyup="@CheckEnter" />
+                             </div>
+                         </div>
+                    }
+                    else
+                    {
+                        <label class="form-label text-muted small">@currentQuestion.InputHint</label>
+                        <input id="answerInput" @bind="answerInput" class="form-control form-control-lg" placeholder="@(GetText("YourAnswer"))" @onkeyup="@CheckEnter" />
+                    }
                 </div>
 
                 @if (!string.IsNullOrEmpty(message))
@@ -183,8 +196,8 @@
                 }
 
                 <div class="d-flex gap-2 mt-4">
-                    <button class="btn btn-secondary flex-grow-1" @onclick="Skip">Atla (Sonra Çöz)</button>
-                    <button class="btn btn-primary-clean flex-grow-1" @onclick="Submit">Gönder</button>
+                    <button class="btn btn-secondary flex-grow-1" @onclick="Skip">@(GetText("Skip"))</button>
+                    <button class="btn btn-primary-clean flex-grow-1" @onclick="Submit">@(GetText("Submit"))</button>
                 </div>
             </div>
         }
@@ -194,8 +207,8 @@
                 @if (!isQuizEnded)
                 {
                     <div class="animate-pulse">
-                        <h3 class="text-info mb-3">Tüm soruları tamamladınız!</h3>
-                        <p class="lead text-muted">Diğer katılımcıların bitirmesi bekleniyor...</p>
+                        <h3 class="text-info mb-3">@(GetText("CompletedAll"))</h3>
+                        <p class="lead text-muted">@(GetText("WaitingOthers"))</p>
                         <div class="spinner-border text-primary mt-3" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
@@ -203,8 +216,8 @@
                 }
                 else
                 {
-                    <h3 class="text-success mb-3">Quiz Tamamlandı!</h3>
-                    <p>Sonuçlar açıklanıyor...</p>
+                    <h3 class="text-success mb-3">@(GetText("QuizCompleted"))</h3>
+                    <p>@(GetText("ResultsAnnouncing"))</p>
                 }
             </div>
         }
@@ -214,11 +227,11 @@
     {
         <div class="modal-backdrop-custom" style="background: rgba(0,0,0,0.95); z-index: 9999;">
             <div class="d-flex flex-column justify-content-center align-items-center h-100 w-100 animate-fade-in-up">
-                <h1 class="text-primary mb-5 display-1 fw-bold glow-text" style="font-size: 5rem;">QUIZ BAŞLIYOR</h1>
+                <h1 class="text-primary mb-5 display-1 fw-bold glow-text" style="font-size: 5rem;">@(GetText("QuizStarting"))</h1>
                 <button class="btn btn-primary-clean btn-lg px-5 py-4 fs-2 btn-glow rounded-pill border-2" 
                         style="min-width: 300px; letter-spacing: 5px; box-shadow: 0 0 50px rgba(0,191,255,0.3);"
                         @onclick="EnterQuiz">
-                    BAŞLA
+                    @(GetText("StartQuiz"))
                 </button>
             </div>
         </div>
@@ -339,6 +352,7 @@
                     currentScore = state.Score;
                     totalQuestions = state.Questions.Count;
                     completedCount = state.Questions.Count(q => q.IsSolved || q.Attempts >= 3);
+                    language = state.Language;
                     
                     // Filter out finished questions
                     questionsQueue = state.Questions.Where(q => !q.IsSolved && q.Attempts < 3).OrderBy(q => q.Position).ToList();
@@ -351,8 +365,15 @@
                     }
                     else
                     {
-                        isUserFinished = true;
                         isFinished = true;
+                    }
+                    
+                    if (state.IsRoomFinished)
+                    {
+                        isQuizEnded = true;
+                        isFinished = true;
+                        if (currentQuestion != null) currentQuestion = null;
+                        questionsQueue.Clear();
                     }
 
                     // Restore Timer
@@ -411,6 +432,7 @@
                 isQuizEnded = false;
                 isUserFinished = false;
                 endTime = t.AddMinutes(c.TimeLimitMinutes);
+                language = c.Language;
                 StartTimer();
                 await LoadQuestions();
                 waitingForFullscreen = true; // Wait for user interaction
@@ -436,7 +458,7 @@
             
             Realtime.OnRoomClosed += async () => 
             { 
-                message = "Oda yönetici tarafından kapatıldı."; 
+                message = GetText("RoomClosed"); 
                 isQuizEnded = true; 
                 isFinished = true;
                 StopTimer(); 
@@ -478,21 +500,47 @@
         // Generate ID if not exists (new join)
         if (string.IsNullOrEmpty(participantId)) participantId = Guid.NewGuid().ToString();
 
-        var success = await Realtime.JoinRoom(RoomCode, displayName, participantId);
-        if (success)
+        // Default language is Turkish but we assume new room might be English? 
+        // We can't know until we join.
+        // But JoinRoom returns boolean.
+        
+        var result = await Realtime.JoinRoom(RoomCode, displayName, participantId);
+        if (result.Success)
         {
+            // Set initial language from room
+            language = result.Language; 
+            if (string.IsNullOrEmpty(participantId)) participantId = result.Message; // If PID was generated on server or returned
+
             await JS.InvokeVoidAsync("localStorage.setItem", $"quiz_pid_{RoomCode.ToUpper()}", participantId);
             await JS.InvokeVoidAsync("localStorage.setItem", $"quiz_name_{RoomCode.ToUpper()}", displayName);
         }
         else
         {
-            restoreMessage = "Odaya katılınamadı veya oda yok.";
+            restoreMessage = GetText("JoinFailed") + result.Message;
         }
     }
+
+    private string caesarShiftInput = "";
+    private string caesarPlainInput = "";
 
     private async Task Submit()
     {
         if (currentQuestion == null || isUserFinished) return;
+
+        // Combine inputs for Caesar Analysis
+        if (currentQuestion.InputType == "caesar_analysis")
+        {
+             // Format: "{shift}|{plain}"
+             // Ensure shift is parsed as int to normalize
+             if (int.TryParse(caesarShiftInput, out int s))
+             {
+                 answerInput = $"{s}|{caesarPlainInput.Trim()}";
+             }
+             else
+             {
+                 answerInput = $"0|{caesarPlainInput.Trim()}"; // or handle invalid input
+             }
+        }
 
         var result = await Realtime.SubmitAnswer(RoomCode, participantId, currentQuestion.Id, answerInput);
         
@@ -524,7 +572,7 @@
             
             if (result.Message.Contains("iptal") || currentStrikes >= 3)
             {
-                message = "Soru iptal oldu!";
+                message = GetText("QuestionCanceled");
                 await Task.Delay(1000);
                 completedCount++;
                 if (questionsQueue.Count > 0) questionsQueue.RemoveAt(0);
@@ -548,7 +596,7 @@
                     showPenalty = true;
                     _ = HandlePenaltyToast();
                 }
-                message = "Yanlis cevap! Tekrar deneyin.";
+                message = GetText("WrongAnswer");
             }
         }
     }
@@ -587,6 +635,8 @@
         currentQuestion = questionsQueue[0];
         currentStrikes = currentQuestion.Attempts; // Should be 0 initially
         answerInput = "";
+        caesarShiftInput = "";
+        caesarPlainInput = "";
         message = "";
         await JS.InvokeVoidAsync("focusAnswer", "answerInput");
     }
@@ -600,6 +650,54 @@
         await Task.Delay(2000);
         showScoreToast = false;
         await InvokeAsync(StateHasChanged);
+    }
+
+    private string language = "tr";
+    private Dictionary<string, string> tr = new() 
+    {
+        {"YourScore", "Puanınız"},
+        {"WaitingResults", "Yönetici sonuçları açıkladığında burada görünecektir."},
+        {"YourAnswer", "Cevabınız..."},
+        {"Skip", "Atla (Sonra Çöz)"},
+        {"Submit", "Gönder"},
+        {"Topic", "Konu"},
+        {"CompletedAll", "Tüm soruları tamamladınız!"},
+        {"WaitingOthers", "Diğer katılımcıların bitirmesi bekleniyor..."},
+        {"QuizCompleted", "Quiz Tamamlandı!"},
+        {"ResultsAnnouncing", "Sonuçlar açıklanıyor..."},
+        {"StartQuiz", "BAŞLA"},
+        {"QuizStarting", "QUIZ BAŞLIYOR"},
+        {"QuestionCanceled", "Soru iptal oldu!"},
+        {"WrongAnswer", "Yanlış cevap! Tekrar deneyin."},
+        {"RoomClosed", "Oda yönetici tarafından kapatıldı."},
+        {"JoinFailed", "Odaya katılınamadı: "},
+        {"NoMoreQuestionsToSkip", "Atlanacak başka soru yok!"}
+    };
+    private Dictionary<string, string> en = new() 
+    {
+        {"YourScore", "Your Score"},
+        {"WaitingResults", "Will appear here when admin announces results."},
+        {"YourAnswer", "Your answer..."},
+        {"Skip", "Skip (Solve Later)"},
+        {"Submit", "Submit"},
+        {"Topic", "Topic"},
+        {"CompletedAll", "You have completed all questions!"},
+        {"WaitingOthers", "Waiting for other participants..."},
+        {"QuizCompleted", "Quiz Completed!"},
+        {"ResultsAnnouncing", "Results are being completely..."},
+        {"StartQuiz", "START"},
+        {"QuizStarting", "QUIZ STARTING"},
+        {"QuestionCanceled", "Question canceled!"},
+        {"WrongAnswer", "Wrong answer! Try again."},
+        {"RoomClosed", "Room closed by admin."},
+        {"JoinFailed", "Failed to join room: "},
+        {"NoMoreQuestionsToSkip", "No more questions to skip!"}
+    };
+
+    private string GetText(string key)
+    {
+        var dict = language == "en" ? en : tr;
+        return dict.ContainsKey(key) ? dict[key] : key;
     }
 
     private async Task HandleStrikeShake()
@@ -659,7 +757,7 @@
         }
         else
         {
-            message = "Atlanacak başka soru yok!";
+            message = GetText("NoMoreQuestionsToSkip");
         }
     }
 

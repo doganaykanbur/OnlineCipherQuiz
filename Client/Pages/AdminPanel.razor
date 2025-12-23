@@ -4,27 +4,109 @@
 @inject RealtimeService Realtime
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject HttpClient Http
+@using System.Threading
+@using Microsoft.AspNetCore.SignalR.Client
 @implements IAsyncDisposable
 
 <div class="container py-4 animate-fade-in-up">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="text-primary glow-text fw-bold">ADMIN PANELİ</h2>
-        <button class="btn btn-outline-secondary btn-glow" @onclick='() => Nav.NavigateTo("/")'>Çıkış</button>
+        <h2 class="text-primary glow-text fw-bold">@T("AdminPanel") @(isArchiveView ? @T("ArchiveMode") : "")</h2>
+        <div>
+            @if (isArchiveView)
+            {
+                <button class="btn btn-outline-warning btn-glow me-2" @onclick="ExitArchiveView">@T("BackToLive")</button>
+            }
+            <button class="btn btn-outline-secondary btn-glow" @onclick='() => Nav.NavigateTo("/")'>@T("Exit")</button>
+        </div>
     </div>
 
     @if (string.IsNullOrEmpty(roomCode))
     {
         <div class="cyber-card mx-auto p-4" style="max-width:500px">
-            <h4 class="mb-3 text-info">Yeni Oda Kur</h4>
-            <div class="mb-3">
-                <label class="form-label">Oda Adı</label>
-                <input @bind="roomName" class="form-control" />
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Admin Adı</label>
-                <input @bind="adminName" class="form-control" />
-            </div>
-            <button class="btn btn-primary-clean w-100 btn-glow" @onclick="CreateRoom">Oluştur</button>
+            <h4 class="mb-3 text-info">@T("NewRoomTitle")</h4>
+            
+            <ul class="nav nav-tabs mb-3 border-secondary">
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == "new" ? "active bg-dark text-info border-info" : "text-muted")" @onclick='() => activeTab = "new"'>@T("CreateRoomTab")</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == "archive" ? "active" : "")" @onclick="LoadArchiveList">@T("ArchiveTab")</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == "builder" ? "active" : "")" @onclick='() => activeTab = "builder"'>@T("BuilderTab")</button>
+                </li>
+            </ul>
+
+            @if (activeTab == "new")
+            {
+                <div class="mb-3">
+                    <label class="form-label">@T("RoomName")</label>
+                    <input @bind="roomName" class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">@T("RoomPassword")</label>
+                    <input type="password" @bind="creationPassword" class="form-control" placeholder="@T("RoomPassword")" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Dil / Language</label>
+                    <select @bind="selectedLanguage" class="form-select bg-dark text-light border-secondary">
+                        <option value="tr">Türkçe</option>
+                        <option value="en">English</option>
+                    </select>
+                </div>
+                <div class="mb-3 form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="cryptanalysisMode" @bind="isCryptanalysis">
+                    <label class="form-check-label text-warning" for="cryptanalysisMode">@T("CryptoMode")</label>
+                    <div class="form-text text-light opacity-50 small">
+                        @T("CryptoDesc")
+                    </div>
+                </div>
+                <button class="btn btn-primary-clean w-100 btn-glow" @onclick="CreateRoom">@T("Create")</button>
+            }
+            else if (activeTab == "archive")
+            {
+                if (!isAdminUnlocked)
+                {
+                    <div class="text-center p-4">
+                        <h5 class="text-info mb-3">Yönetici Erişimi Gerekli</h5>
+                        <div class="mb-3" style="max-width: 300px; margin: 0 auto;">
+                            <input type="password" class="form-control bg-dark text-light border-secondary text-center" 
+                                   @bind="masterPasswordInput" placeholder="Master Password" @onkeyup="@(e => e.Key == "Enter" ? UnlockAdmin() : null)" />
+                        </div>
+                        <button class="btn btn-outline-info btn-glow" @onclick="UnlockAdmin">Giriş</button>
+                    </div>
+                }
+                else
+                {
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        @if (archivedRooms == null)
+                        {
+                            <div class="text-center"><span class="spinner-border spinner-border-sm"></span> Yükleniyor...</div>
+                        }
+                        else if (archivedRooms.Count == 0)
+                        {
+                            <div class="text-center text-muted">Arşivlenmiş oturum bulunamadı.</div>
+                        }
+                        else
+                        {
+                            <ul class="list-group">
+                                @foreach (var ar in archivedRooms)
+                                {
+                                    <li class="list-group-item list-group-item-action d-flex justify-content-between align-items-center bg-transparent text-light border-secondary" 
+                                        @onclick="() => LoadRemoteArchive(ar.Code)" style="cursor:pointer">
+                                        <div>
+                                            <div class="fw-bold">@ar.Name</div>
+                                            <small class="text-muted">@ar.StartUtc?.ToLocalTime().ToString("g") - @ar.Code</small>
+                                        </div>
+                                        <span class="badge bg-info rounded-pill">@ar.Participants.Count</span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+            }
         </div>
     }
     else
@@ -33,23 +115,25 @@
             <!-- Left Column: Controls -->
             <div class="col-md-4">
                 <div class="cyber-card p-3 mb-3">
-                    <h5 class="text-info border-bottom border-secondary pb-2">Oda Bilgileri</h5>
+                    <h5 class="text-info border-bottom border-secondary pb-2">@T("RoomInfo")</h5>
                     <div class="d-flex justify-content-between align-items-center glass-panel p-2 rounded mb-2">
                         <span class="fs-4 fw-bold font-monospace text-warning">@roomCode</span>
-                        <button class="btn btn-sm btn-outline-primary" @onclick="CopyCode" disabled="@string.IsNullOrEmpty(roomCode)">Kopyala</button>
+                        @if(!isArchiveView) {
+                            <button class="btn btn-sm btn-outline-primary" @onclick="CopyCode" disabled="@string.IsNullOrEmpty(roomCode)">@T("Copy")</button>
+                        }
                     </div>
-                    @if (!string.IsNullOrEmpty(roomCode))
+                    @if (!string.IsNullOrEmpty(roomCode) && !isArchiveView)
                     {
                         <div class="d-flex justify-content-between align-items-center glass-panel p-2 rounded border border-secondary mb-3" title="@GetInviteLink()">
                             <div class="text-truncate small text-muted" style="max-width:70%">@GetInviteLink()</div>
-                            <button class="btn btn-sm btn-outline-secondary" @onclick="CopyLink">Link</button>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="CopyLink">@T("Link")</button>
                         </div>
                     }
                     
                     @if (!isStarted && !isFinished)
                     {
                         <hr class="border-secondary" />
-                        <h6 class="text-muted">Quiz Ayarları</h6>
+                        <h6 class="text-muted">@T("QuizSettings")</h6>
                         <div class="row">
                             @foreach (var topic in availableTopics)
                             {
@@ -73,31 +157,79 @@
                             }
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Süre (Dakika)</label>
+                            <label class="form-label">@T("TimeLimit")</label>
                             <input type="number" class="form-control" @bind="timeLimitMinutes" min="1" max="120" />
                         </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Dil / Language</label>
+                            <select @bind="selectedLanguage" class="form-select bg-dark text-light border-secondary">
+                                <option value="tr">Türkçe</option>
+                                <option value="en">English</option>
+                            </select>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="cryptanalysisModeSettings" @bind="isCryptanalysis">
+                            <label class="form-check-label text-warning" for="cryptanalysisModeSettings">@T("CryptoModeSettings")</label>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="sameQuestionsSettings" @bind="sameQuestionsForEveryone">
+                            <label class="form-check-label text-info" for="sameQuestionsSettings">@T("SameQuestions")</label>
+                            <div class="form-text text-muted small">@T("SameQuestionsDesc")</div>
+                        </div>
 
-                        <button class="btn btn-success w-100 btn-glow" @onclick="StartQuiz">Quiz'i Başlat</button>
+                        @if (customQuestions.Any())
+                        {
+                            <div class="mb-3 p-3 border border-secondary rounded glass-panel">
+                                <label class="form-label fw-bold text-info border-bottom border-secondary w-100 pb-1">@T("CustomQuestions")</label>
+                                <div class="row">
+                                    @foreach (var q in customQuestions)
+                                    {
+                                        <div class="col-md-12 mb-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input bg-dark border-secondary" type="checkbox" id="cq_@q.Id" 
+                                                       checked="@selectedCustomQuestionIds.Contains(q.Id)"
+                                                       @onchange="@(e => ToggleCustomQuestionSelection(q.Id, e))" />
+                                                <label class="form-check-label small text-light" for="cq_@q.Id">
+                                                    <span class="badge bg-secondary me-1">@q.Topic</span>
+                                                    <span class="text-muted fw-bold me-1">[@q.Key]</span>
+                                                    @(q.Text.Length > 40 ? q.Text.Substring(0, 40)+"..." : q.Text)
+                                                </label>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <button class="btn btn-success w-100 btn-glow" @onclick="StartQuiz">@T("StartQuiz")</button>
                     }
                     else if (isStarted)
                     {
-                        <div class="alert alert-success bg-opacity-25 bg-success text-white border-success">Quiz Devam Ediyor...</div>
-                        <button class="btn btn-danger w-100 btn-glow" @onclick="FinishQuiz">Quiz'i Sonlandır</button>
+                        <div class="alert alert-success bg-opacity-25 bg-success text-white border-success">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>@T("QuizContinuing")</span>
+                                <span class="fw-bold font-monospace fs-5">@timeLeft.ToString(@"mm\:ss")</span>
+                            </div>
+                        </div>
+                        <button class="btn btn-danger w-100 btn-glow" @onclick="FinishQuiz">@T("EndQuiz")</button>
                     }
                     else
                     {
-                        <div class="alert alert-info bg-opacity-25 bg-info text-white border-info">Quiz Tamamlandı</div>
+                        <div class="alert alert-info bg-opacity-25 bg-info text-white border-info">@T("FinishedMsg")</div>
 
                         <div class="d-grid gap-2">
-                            <a href="api/results/@roomCode/xlsx?adminToken=@adminToken&detailed=false" target="_blank" class="btn btn-success btn-glow">Excel İndir</a>
-                            <a href="api/results/@roomCode/pdf?adminToken=@adminToken&detailed=false" target="_blank" class="btn btn-danger btn-glow">PDF İndir (Özet)</a>
-                            <a href="api/results/@roomCode/full-pdf?adminToken=@adminToken" target="_blank" class="btn btn-warning btn-glow text-dark">Detaylı PDF (Tümü)</a>
-                            <button class="btn btn-outline-primary btn-glow" @onclick="TriggerShowResults">Sonuçları Gör</button>
+                            <a href="api/results/@roomCode/xlsx?adminToken=@adminToken&detailed=false" target="_blank" class="btn btn-success btn-glow">@T("DownloadExcel")</a>
+                            <a href="api/results/@roomCode/pdf?adminToken=@adminToken&detailed=false" target="_blank" class="btn btn-danger btn-glow">@T("DownloadPDF")</a>
+                            <a href="api/results/@roomCode/full-pdf?adminToken=@adminToken" target="_blank" class="btn btn-warning btn-glow text-dark">@T("DownloadFullPDF")</a>
+                            <button class="btn btn-outline-primary btn-glow" @onclick="TriggerShowResults">@T("SeeResults")</button>
                         </div>
                     }
                     
                     <hr class="my-3 border-secondary" />
-                    <button class="btn btn-outline-danger w-100 btn-glow" @onclick="CloseRoom">Odayı Kapat</button>
+                    @if (!isArchiveView) {
+                        <button class="btn btn-outline-danger w-100 btn-glow" @onclick="CloseRoom">@T("CloseRoom")</button>
+                    }
                 </div>
 
             </div>
@@ -105,15 +237,15 @@
             <!-- Right Column: Scoreboard & Participants -->
             <div class="col-md-8">
                 <div class="cyber-card p-3">
-                    <h5 class="text-info border-bottom border-secondary pb-2">Canlı Skor Tablosu</h5>
+                    <h5 class="text-info border-bottom border-secondary pb-2">@T("Scoreboard")</h5>
                     <table class="table table-hover table-dark bg-transparent">
                         <thead>
                             <tr>
-                                <th>Sıra</th>
-                                <th>İsim</th>
-                                <th>Puan</th>
-                                <th>Soru</th>
-                                <th>Durum</th>
+                                <th>@T("Rank")</th>
+                                <th>@T("Name")</th>
+                                <th>@T("Score")</th>
+                                <th>@T("Question")</th>
+                                <th>@T("Status")</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -130,8 +262,8 @@
                                         else { <span>@s.CurrentQuestionIndex</span> }
                                     </td>
                                     <td>
-                                        @if(s.IsFinished) { <span class="badge bg-success">Bitti</span> }
-                                        else { <span class="badge bg-warning text-dark">Çözüyor</span> }
+                                        @if(s.IsFinished) { <span class="badge bg-success">@T("Finished")</span> }
+                                        else { <span class="badge bg-warning text-dark">@T("Solving")</span> }
                                     </td>
                                 </tr>
                             }
@@ -141,10 +273,10 @@
 
                 <div class="card-clean mt-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h5>Katılımcılar (@participants.Count)</h5>
-                        @if (participants.Any(p => !p.IsApproved))
+                        <h5>@T("Participants") (@participants.Count)</h5>
+                        @if (participants.Any(p => !p.IsApproved) && !isArchiveView)
                         {
-                            <button class="btn btn-sm btn-success" @onclick="ApproveAll">Hepsini Onayla</button>
+                            <button class="btn btn-sm btn-success" @onclick="ApproveAll">@T("ApproveAll")</button>
                         }
                     </div>
                     <ul class="list-group list-group-flush">
@@ -163,19 +295,28 @@
                                 </span>
                                 
                                 <div class="d-flex align-items-center gap-2 ms-auto">
-                                    @if (!p.IsApproved)
+                                    @if (!p.IsApproved && !isArchiveView)
                                     {
-                                        <span class="badge bg-secondary me-2">Bekliyor</span>
-                                        <button class="btn btn-sm btn-success" @onclick="() => Approve(p.ParticipantId)">Onay</button>
-                                        <button class="btn btn-sm btn-danger" @onclick="() => Reject(p.ParticipantId)">Red</button>
+                                        <span class="badge bg-secondary me-2">@T("Waiting")</span>
+                                        <button class="btn btn-sm btn-success" @onclick="() => Approve(p.ParticipantId)">@T("Approve")</button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => Reject(p.ParticipantId)">@T("Reject")</button>
                                     }
                                     else
                                     {
                                         <span class="badge @(p.IsFinished ? "bg-success" : "bg-info text-dark")">
-                                            @(p.IsFinished ? "Bitti" : "Onaylı")
+                                            @if (p.IsFinished) 
+                                            { 
+                                                @T("Finished")
+                                            }
+                                            else
+                                            {
+                                                @T("Approved")
+                                            }
                                         </span>
                                     }
-                                    <button class="btn btn-sm btn-outline-danger py-0 px-2 ms-3" @onclick="() => Kick(p.ParticipantId)" title="At">×</button>
+                                    @if(!isArchiveView) {
+                                        <button class="btn btn-sm btn-outline-danger py-0 px-2 ms-3" @onclick="() => Kick(p.ParticipantId)" title="At">×</button>
+                                    }
                                 </div>
                             </li>
                         }
@@ -188,7 +329,7 @@
                         <div class="modal-content-custom modal-content-fullscreen">
                             <button class="btn-close-custom" @onclick="() => ShowPodium = false">×</button>
                             <div class="text-center w-100 h-100 d-flex flex-column justify-content-center">
-                                <h2 class="mb-4 text-primary">Sonuçlar</h2>
+                                <h2 class="mb-4 text-primary">@T("Results")</h2>
                                 <div class="podium-container podium-confetti flex-grow-1" style="max-height: 500px;">
                                     @if (scoreboard.Count >= 2)
                                     {
@@ -217,7 +358,7 @@
                                 @if (scoreboard.Count > 3)
                                 {
                                     <div class="mt-4 text-start mx-auto" style="max-width: 600px; width: 100%;">
-                                        <h4 class="text-center mb-3">Diğer Katılımcılar</h4>
+                                        <h4 class="text-center mb-3">@T("OtherParticipants")</h4>
                                         <ul class="list-group" style="max-height: 200px; overflow-y: auto;">
                                             @for (int i = 3; i < scoreboard.Count; i++)
                                             {
@@ -319,7 +460,7 @@
                                             {
                                                 @if (d.Key.StartsWith("Matrix_") || d.Key == "MixedAlphabet") continue;
 
-                                                @if (d.Key == "Matris")
+                                                @if (d.Key == "Matris" || d.Key == "Matrix")
                                                 {
                                                     var rows = d.Value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                                                                       .Select(r => r.Trim())
@@ -374,15 +515,250 @@
                 </div>
             </div>
         </div>
+
+    }
+
+    @if (activeTab == "builder")
+    {
+        if (!isAdminUnlocked)
+        {
+             <div class="cyber-card mb-4 shadow-sm p-5 text-center" style="max-width: 500px; margin: 0 auto;">
+                <h4 class="text-info mb-3">Soru Üretici Erişimi</h4>
+                <p class="text-muted mb-4">Bu alana sadece yetkili yöneticiler erişebilir.</p>
+                <div class="mb-3">
+                    <input type="password" class="form-control bg-dark text-light border-secondary text-center" 
+                           @bind="masterPasswordInput" placeholder="Master Password" @onkeyup="@(e => e.Key == "Enter" ? UnlockAdmin() : null)" />
+                </div>
+                <button class="btn btn-primary-clean btn-glow w-100" @onclick="UnlockAdmin">Kilidi Aç</button>
+            </div>
+        }
+        else
+        {
+            <div class="row">
+            <div class="col-md-5">
+                <div class="cyber-card mb-4 shadow-sm p-3">
+                    <h5 class="text-info border-bottom border-secondary pb-2">Yeni Soru Ekle</h5>
+                    <div class="card-body px-0">
+                        <div class="mb-3">
+                            <label class="form-label text-light">Konu</label>
+                            <select class="form-select bg-dark text-light border-secondary" @bind="newCustomQuestion.Topic">
+                                @foreach (var t in availableTopics)
+                                {
+                                    <option value="@t">@t</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-light">Mod</label>
+                            <select class="form-select bg-dark text-light border-secondary" @bind="newCustomQuestion.Mode">
+                                <option value="Encrypt">Şifrele (Encrypt)</option>
+                                <option value="Decrypt">Çöz (Decrypt)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="cq_is_analysis" @bind="newCustomQuestion.IsAnalysis">
+                            <label class="form-check-label text-warning" for="cq_is_analysis">Kripto Analiz Sorusu mu?</label>
+                            <div class="form-text text-muted small">
+                                Açılırsa: Caesar için şifre çözülmesi istenir (Key gizlenir).
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-light">@GetKeyLabel(newCustomQuestion.Topic)</label>
+                            @if (newCustomQuestion.Topic != "Base64")
+                            {
+                                <input type="text" class="form-control bg-dark text-light border-secondary" @bind="newCustomQuestion.Key" placeholder="@GetKeyPlaceholder(newCustomQuestion.Topic)" />
+                            }
+                            else
+                            {
+                                <input type="text" class="form-control bg-dark text-muted border-secondary" value="Gerekmiyor (Not Required)" disabled />
+                            }
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-light">@getTextLabel(newCustomQuestion.Topic, newCustomQuestion.Mode)</label>
+                            <textarea class="form-control bg-dark text-light border-secondary" rows="3" @bind="newCustomQuestion.Text" placeholder="..."></textarea>
+                        </div>
+                        <button class="btn btn-success w-100 btn-glow" @onclick="SaveCustomQuestion">Soruyu Kaydet</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-7">
+                <div class="cyber-card shadow-sm p-3">
+                    <h5 class="text-info border-bottom border-secondary pb-2">Kayıtlı Sorular</h5>
+                    <div class="card-body px-0 p-0">
+                        @if (!customQuestions.Any())
+                        {
+                            <div class="p-3 text-center text-muted">Henüz kayıtlı soru yok.</div>
+                        }
+                        else
+                        {
+                            <ul class="list-group list-group-flush bg-transparent">
+                                @foreach (var q in customQuestions.OrderByDescending(x => x.CreatedAt))
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-secondary text-light">
+                                        <div>
+                                            <span class="badge bg-secondary me-2">@q.Topic</span>
+                                            <span class="badge @(q.Mode == "Encrypt" ? "bg-info text-dark" : "bg-warning text-dark") me-2">@q.Mode</span>
+                                            @if (q.IsAnalysis)
+                                            {
+                                                <span class="badge bg-danger text-white me-2">Analiz</span>
+                                            }
+                                            <small class="text-muted fw-bold me-2">Key: @q.Key</small>
+                                            <div class="text-truncate text-light text-opacity-75" style="max-width: 300px; font-size: 0.9em;">@q.Text</div>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteCustomQuestion(q.Id)">Sil</button>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+            </div>
+            </div>
+        }
     }
 
 </div>
-
 @code {
+    // Localization Logic
+    private string T(string key)
+    {
+        if (translations.ContainsKey(selectedLanguage) && translations[selectedLanguage].ContainsKey(key))
+            return translations[selectedLanguage][key];
+        return translations["tr"].ContainsKey(key) ? translations["tr"][key] : key;
+    }
+
+    private Dictionary<string, Dictionary<string, string>> translations = new()
+    {
+        { "tr", new() {
+            { "NewRoom", "Yeni Oda" },
+            { "NewRoomTitle", "Yeni Oda Kur" },
+            { "CreateRoomTab", "Yeni Oda" },
+            { "ArchiveTab", "Geçmiş Oturumlar" },
+            { "BuilderTab", "Soru Üretici" },
+            { "RoomName", "Oda Adı" },
+            { "RoomPassword", "Özel Şifre" },
+            { "Create", "Oluştur" },
+            { "RoomInfo", "Oda Bilgileri" },
+            { "Copy", "Kopyala" },
+            { "Link", "Link" },
+            { "TimeLimit", "Süre (Dakika)" },
+            { "QuizSettings", "Quiz Ayarları" },
+            { "CryptoMode", "Kripto Analiz Modu (Zor - Hard)" },
+            { "CryptoModeSettings", "Kripto Analiz Modu" },
+            { "CryptoDesc", "Aktif edilirse: Sorular anlamlı metinlerden oluşur. Caesar için şifre çözülmeli, diğerleri için Anahtar bulunmalıdır." },
+            { "SameQuestions", "Herkese Aynı Sorular" },
+            { "SameQuestionsDesc", "Aktifse: Herkese birebir aynı sorular sorulur." },
+            { "CustomQuestions", "Özel Sorular" },
+            { "StartQuiz", "Quiz'i Başlat" },
+            { "EndQuiz", "Quiz'i Sonlandır" },
+            { "QuizContinuing", "Quiz Devam Ediyor..." },
+            { "FinishedMsg", "Quiz Tamamlandı" },
+            { "CloseRoom", "Odayı Kapat" },
+            { "Scoreboard", "Canlı Skor Tablosu" },
+            { "Participants", "Katılımcılar" },
+            { "ApproveAll", "Hepsini Onayla" },
+            { "Approve", "Onay" },
+            { "Reject", "Red" },
+            { "Kick", "At" },
+            { "Waiting", "Bekliyor" },
+            { "Approved", "Onaylı" },
+            { "Finished", "Bitti" },
+            { "Rank", "Sıra" },
+            { "Name", "İsim" },
+            { "Score", "Puan" },
+            { "Question", "Soru" },
+            { "Status", "Durum" },
+            { "Solving", "Çözüyor" },
+            { "Exit", "Çıkış" },
+            { "BackToLive", "Canlı Moda Dön" },
+            { "AdminPanel", "ADMIN PANELİ" },
+            { "ArchiveMode", "(ARŞİV MODU)" },
+            { "Results", "Sonuçlar" },
+            { "DownloadExcel", "Excel İndir" },
+            { "DownloadPDF", "PDF İndir (Özet)" },
+            { "DownloadFullPDF", "Detaylı PDF (Tümü)" },
+            { "SeeResults", "Sonuçları Gör" },
+            { "OtherParticipants", "Diğer Katılımcılar" }
+        }},
+        { "en", new() {
+            { "NewRoom", "New Room" },
+            { "NewRoomTitle", "Create New Room" },
+            { "CreateRoomTab", "New Room" },
+            { "ArchiveTab", "Past Sessions" },
+            { "BuilderTab", "Question Builder" },
+            { "RoomName", "Room Name" },
+            { "RoomPassword", "Room Password" },
+            { "Create", "Create" },
+            { "RoomInfo", "Room Info" },
+            { "Copy", "Copy" },
+            { "Link", "Link" },
+            { "TimeLimit", "Time Limit (Minutes)" },
+            { "QuizSettings", "Quiz Settings" },
+            { "CryptoMode", "Cryptanalysis Mode (Hard)" },
+            { "CryptoModeSettings", "Cryptanalysis Mode" },
+            { "CryptoDesc", "If active: Questions use meaningful text. Must decrypt for Caesar, find Key for others." },
+            { "SameQuestions", "Same Questions for Everyone" },
+            { "SameQuestionsDesc", "If active: Everyone gets the exact same questions." },
+            { "CustomQuestions", "Custom Questions" },
+            { "StartQuiz", "Start Quiz" },
+            { "EndQuiz", "End Quiz" },
+            { "QuizContinuing", "Quiz is Running..." },
+            { "FinishedMsg", "Quiz Finished" },
+            { "CloseRoom", "Close Room" },
+            { "Scoreboard", "Live Scoreboard" },
+            { "Participants", "Participants" },
+            { "ApproveAll", "Approve All" },
+            { "Approve", "Approve" },
+            { "Reject", "Reject" },
+            { "Kick", "Kick" },
+            { "Waiting", "Waiting" },
+            { "Approved", "Approved" },
+            { "Finished", "Finished" },
+             { "Rank", "Rank" },
+            { "Name", "Name" },
+            { "Score", "Score" },
+            { "Question", "Question" },
+            { "Status", "Status" },
+            { "Solving", "Solving" },
+            { "Exit", "Exit" },
+            { "BackToLive", "Back to Live Mode" },
+            { "AdminPanel", "ADMIN PANEL" },
+            { "ArchiveMode", "(ARCHIVE MODE)" },
+            { "Results", "Results" },
+            { "DownloadExcel", "Download Excel" },
+            { "DownloadPDF", "Download PDF (Summary)" },
+            { "DownloadFullPDF", "Detailed PDF (Full)" },
+            { "SeeResults", "See Results" },
+            { "OtherParticipants", "Other Participants" }
+        }}
+    };
+
+    // Custom Question Logic Added
     private string roomName = "Cipher Room";
-    private string adminName = "Admin";
+    private string creationPassword = "";
+    private string adminName = "Yönetici"; // Default or derived from server
     private string roomCode = "";
     private string adminToken = "";
+
+    // Security Logic
+    private bool isAdminUnlocked = false;
+    private string masterPasswordInput = "";
+
+    private async Task UnlockAdmin()
+    {
+        if (await Realtime.ValidateMasterPassword(masterPasswordInput))
+        {
+            isAdminUnlocked = true;
+            masterPasswordInput = ""; // Clear
+             if (activeTab == "archive") await LoadArchiveList(); // Reload if needed
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("alert", "Hatalı Şifre!");
+        }
+    }
+
 
 
     private bool isStarted = false;
@@ -390,7 +766,7 @@
     private int timeLimitMinutes = 20;
 
     private List<string> availableTopics = new() { "Caesar", "Vigenere", "Base64", "Xor", "Hill", "Monoalphabetic", "Playfair", "Transposition" };
-    private Dictionary<string, int> selectedTopics = new() { { "Caesar", 2 }, { "Vigenere", 2 } };
+    private Dictionary<string, int> selectedTopics = new() { { "Caesar", 1 }, { "Vigenere", 1 } };
 
     private List<ParticipantDto> participants = new();
     private List<ScoreboardEntryDto> scoreboard = new();
@@ -405,7 +781,109 @@
     
 
 
+    private string selectedLanguage = "tr";
+    private string activeTab = "new";
+    private bool isCryptanalysis = false;
+    private bool sameQuestionsForEveryone = false;
+
+    // Missing Fields Restored
+    private List<CustomQuestion> customQuestions = new();
+    private List<string> selectedCustomQuestionIds = new();
+    private CustomQuestion newCustomQuestion = new();
+    private Room? currentArchiveRoom;
+
+    // ...
+
+    private async Task CreateRoom()
+    {
+        try 
+        {
+            var result = await Realtime.CreateRoom(roomName, creationPassword, selectedLanguage, selectedCustomQuestionIds, isCryptanalysis);
+            roomCode = result.RoomCode;
+            adminToken = result.AdminToken;
+            
+            // Sync local variables just in case (already set by UI but good practice)
+            // No need to fetch, we are the source of truth here.
+            // await PersistSession();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", "Hata: " + ex.Message);
+        }
+    }
+
+    private string GetKeyLabel(string topic)
+    {
+        return topic switch
+        {
+            "Caesar" => "Öteleme Miktarı (Shift - Sayı)",
+            "Hill" => "Matris Değerleri (a,b,c,d)",
+            "Xor" => "Değer 2 (0-255)",
+            "Base64" => "Anahtar (Yok)",
+            _ => "Anahtar Kelime (Keyword)"
+        };
+    }
+
+    private string GetKeyPlaceholder(string topic)
+    {
+        return topic switch
+        {
+            "Caesar" => "Örn: 3",
+            "Hill" => "Örn: 3,5,6,17",
+            "Xor" => "Örn: 123",
+            _ => "Örn: KEYWORD"
+        };
+    }
+
+    private string getTextLabel(string topic, string mode)
+    {
+        if (topic == "Xor") return "Değer 1 (0-255)";
+        
+        var type = mode == "Encrypt" ? "Düz Metin (Plaintext)" : "Şifreli Metin (Ciphertext)";
+        return $"İşlenecek Metin ({type})";
+    }
+
+    private async Task LoadCustomQuestions()
+    {
+        customQuestions = await Http.GetFromJsonAsync<List<CustomQuestion>>("api/custom-questions") ?? new();
+        StateHasChanged();
+    }
+
+    private async Task SaveCustomQuestion()
+    {
+        if (string.IsNullOrWhiteSpace(newCustomQuestion.Text)) return;
+        await Http.PostAsJsonAsync("api/custom-questions", newCustomQuestion);
+        newCustomQuestion = new CustomQuestion(); // Reset
+        await LoadCustomQuestions();
+    }
+
+    private async Task DeleteCustomQuestion(string id)
+    {
+        await Http.DeleteAsync($"api/custom-questions/{id}");
+        await LoadCustomQuestions();
+    }
+
+    private void ToggleCustomQuestionSelection(string id, ChangeEventArgs e)
+    {
+        bool isChecked = (bool)(e.Value ?? false);
+        if (isChecked)
+        {
+            if (!selectedCustomQuestionIds.Contains(id)) selectedCustomQuestionIds.Add(id);
+        }
+        else
+        {
+            selectedCustomQuestionIds.Remove(id);
+        }
+    }
+
+    // ... existing archivedRooms and logic 
+    private List<Room>? archivedRooms;
+    // ...
+    private bool isArchiveView = false;
+    private System.Threading.Timer? _timer;
     private bool ShowPodium = false;
+    private TimeSpan timeLeft;
+    private DateTime? quizStartTime;
 
     private Dictionary<string, bool> participantAlerts = new();
 
@@ -414,7 +892,14 @@
         await Realtime.StartConnection();
         Realtime.OnParticipantListChanged += (list) => InvokeAsync(() => { participants = list; StateHasChanged(); });
         Realtime.OnScoreboardUpdated += (list) => InvokeAsync(() => { scoreboard = list; StateHasChanged(); });
-        Realtime.OnQuizStarted += (t, c) => InvokeAsync(() => { isStarted = true; isFinished = false; ShowPodium = false; StateHasChanged(); });
+        Realtime.OnQuizStarted += (t, c) => InvokeAsync(() => { 
+            isStarted = true; 
+            isFinished = false; 
+            ShowPodium = false; 
+            quizStartTime = t;
+            timeLimitMinutes = c.TimeLimitMinutes;
+            StateHasChanged(); 
+        });
         Realtime.OnQuizFinished += () => InvokeAsync(() => { isStarted = false; isFinished = true; ShowPodium = true; StateHasChanged(); });
         Realtime.OnProctorEventReceived += (pid, ev) => InvokeAsync(() =>
         {
@@ -437,22 +922,127 @@
         Realtime.OnShowResults += () => InvokeAsync(() => { ShowPodium = true; StateHasChanged(); });
 
         await RestoreSession();
+        await LoadCustomQuestions();
+
+        // Start timer to check time every 1 second for UI update, but server check every 5
+        _timer = new System.Threading.Timer(async _ => await CheckTime(), null, 1000, 1000);
+    } 
+
+    private async Task CheckTime()
+    {
+        if (isStarted && !string.IsNullOrEmpty(roomCode) && !isArchiveView)
+        {
+             // Update UI timer locally
+             if (quizStartTime.HasValue)
+             {
+                 var elapsed = DateTime.UtcNow - quizStartTime.Value;
+                 var limit = TimeSpan.FromMinutes(timeLimitMinutes);
+                 var remaining = limit - elapsed;
+                 if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+                 
+                 // Only update UI if second changed substantially to avoid flicker? 
+                 // Actually Blazor diffing handles it well.
+                 if ((int)remaining.TotalSeconds != (int)timeLeft.TotalSeconds)
+                 {
+                     timeLeft = remaining;
+                     await InvokeAsync(StateHasChanged);
+                 }
+                 
+                 // Periodically notify server? Realtime.CheckTime logic is already server side but triggered by client?
+                 // Wait, original logic called Realtime.CheckTime every 5 seconds.
+                 // Now we are calling this method every 1 second.
+                 // We should only call Server CheckTime periodically, e.g. every 5th tick or simply check elapsed.
+                 if (((int)elapsed.TotalSeconds) % 5 == 0)
+                 {
+                     await Realtime.CheckTime(roomCode);
+                 }
+             }
+        }
     }
 
-    private async Task CreateRoom()
+    private async Task LoadArchiveList()
     {
-        var result = await Realtime.CreateRoom(roomName, adminName);
-        roomCode = result.RoomCode;
-        adminToken = result.AdminToken;
-        await PersistSession();
+        activeTab = "archive";
+        archivedRooms = await Http.GetFromJsonAsync<List<Room>>("api/archive");
     }
+
+    private async Task LoadRemoteArchive(string code)
+    {
+        try
+        {
+            var room = await Http.GetFromJsonAsync<Room>($"api/archive/{code}");
+            if (room != null)
+            {
+                 currentArchiveRoom = room;
+                 isArchiveView = true;
+                 roomCode = room.Code;
+                 roomName = room.Name;
+                 adminName = "Arşiv"; // or room.AdminName if exists? but room has none
+                 isStarted = false;
+                 isFinished = true; // archives are finished
+                 
+                 participants = room.Participants.Select(p => new ParticipantDto 
+                 { 
+                     ParticipantId = p.ParticipantId, 
+                     DisplayName = p.DisplayName, 
+                     IsApproved = p.IsApproved, 
+                     IsFinished = p.IsFinished 
+                 }).ToList();
+
+                 scoreboard = room.Quiz.Values.Select(qs => new ScoreboardEntryDto
+                 {
+                    DisplayName = qs.DisplayName,
+                    Score = qs.Score,
+                    IsFinished = qs.CurrentIndex >= qs.Questions.Count || qs.Questions.All(q=>q.IsSolved || q.Attempts>=2), // approximation
+                    CurrentQuestionIndex = qs.CurrentIndex + 1
+                 }).OrderByDescending(x => x.Score).ToList();
+                 
+                 // Logs
+                 userLogsMap.Clear();
+                 foreach(var kvp in room.ProctorLogs)
+                 {
+                     userLogsMap[kvp.Key] = kvp.Value.Select(ev => 
+                         $"[{ev.TimestampUtc.ToLocalTime().ToString("HH:mm:ss")}] {ev.Type}: {ev.Content}").OrderByDescending(s => s).ToList();
+                 }
+
+                 // Details map
+                 // We can't use Realtime.GetParticipantDetails directly because it requires room code to be in memory.
+                 // But GetDetails fetches from server anyway. Wait, accessing archived room details?
+                 // Realtime service calls Hub method 'GetParticipantDetails'.
+                 // If the room is Archived, it is removed from 'RoomStore' memory.
+                 // So 'GetParticipantDetails' on Hub will fail?
+                 // YES! 'GetParticipantDetails' calls '_roomStore.GetRoomAsync(roomCode)'. RoomStore (InMemory) won't have it.
+                 // I need to update 'GetParticipantDetails' in Hub to also check archives?
+                 // OR I should use the `room` object I just fetched here?
+                 // But `ShowDetails` uses `Realtime.GetParticipantDetails`.
+                 // I should override `ShowDetails` logic if `isArchiveView` is true.
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading archive: {ex.Message}");
+        }
+    }
+
+    private void ExitArchiveView()
+    {
+        isArchiveView = false;
+        roomCode = ""; // Clear to go back to create/lobby
+        participants.Clear();
+        scoreboard.Clear();
+        userLogsMap.Clear();
+        // Try restore active session
+        _ = RestoreSession();
+    }
+
+
 
     private void ToggleTopic(string topic, object? value)
     {
         bool isChecked = (bool)(value ?? false);
         if (isChecked)
         {
-            if (!selectedTopics.ContainsKey(topic)) selectedTopics[topic] = 2;
+            if (!selectedTopics.ContainsKey(topic)) selectedTopics[topic] = 1;
         }
         else
         {
@@ -487,7 +1077,28 @@
     {
         var p = participants.FirstOrDefault(x => x.ParticipantId == pid);
         selectedDetailsUser = p?.DisplayName ?? pid;
-        selectedParticipantDetails = await Realtime.GetParticipantDetails(roomCode, adminToken, pid);
+        
+        if (isArchiveView)
+        {
+             // We need to find the room in archivedRooms list? No, we have loaded `room` state but not exposed it to class scope.
+             // We need to store the raw loaded room object for archive details.
+             // Let's call API again or store it. Storing it is better.
+             // QUICK FIX: Since I can't easily add a class field holding `Room` without breaking other things or making it messy
+             // I will fetch from API again or just store in a temporary variable.
+             // Actually I'll simple add `private Room? currentArchiveRoom;` to class fields.
+             if (currentArchiveRoom != null && currentArchiveRoom.Quiz.ContainsKey(pid))
+             {
+                 selectedParticipantDetails = currentArchiveRoom.Quiz[pid].Questions;
+             }
+             else 
+             {
+                 selectedParticipantDetails = new List<QuestionState>();
+             }
+        }
+        else 
+        {
+             selectedParticipantDetails = await Realtime.GetParticipantDetails(roomCode, adminToken, pid);
+        }
         showDetailsModal = true;
     }
 
@@ -498,7 +1109,11 @@
             Topics = selectedTopics.Keys.ToList(),
             QuestionsPerTopicMap = selectedTopics,
             MistakesPerQuestion = 2,
-            TimeLimitMinutes = timeLimitMinutes
+            TimeLimitMinutes = timeLimitMinutes,
+            CustomQuestionIds = selectedCustomQuestionIds, // Fix: Include selected custom questions
+            Language = selectedLanguage,    // FIX: Preserve selected language
+            IsCryptanalysis = isCryptanalysis, // FIX: Preserve cryptanalysis mode
+            SameQuestionsForEveryone = sameQuestionsForEveryone // NEW: Sync Same Questions flag
         };
         await Realtime.UpdateConfig(roomCode, adminToken, config);
     }
@@ -573,6 +1188,43 @@
                 adminToken = storedToken;
                 isStarted = state == RoomState.Running;
                 isFinished = state == RoomState.Finished;
+                
+                // If running, we need start time to resume timer!
+                // Realtime.ResumeAdmin only returns RoomState enum.
+                // We need to fetch full room info or at least start time.
+                // Or update ResumeAdmin to return more info. 
+                // But ResumeAdmin is simple. 
+                // We can use Http to get room info if we want? Or update ResumeAdmin.
+                // Actually, let's just use GetRoom via HTTP? Or add method to RealtimeService.
+                // Let's use Http to fetch room info for Admin. Validated by AdminToken? 
+                // The current API might not expose GetRoom for admin easily without token validation.
+                // Let's assume for now we don't show timer on Resume unless we fetch it.
+                // Better fix: Add GetRoomInfo to RealtimeService called after Resume.
+                // Sync Config from Server
+                try 
+                {
+                     var roomInfo = await Realtime.GetRoomInfo(roomCode, adminToken);
+                     if(roomInfo != null)
+                     {
+                         quizStartTime = roomInfo.StartUtc;
+                         timeLimitMinutes = roomInfo.Config.TimeLimitMinutes;
+                         
+                         // FIX: Sync Critical Configs
+                         selectedLanguage = roomInfo.Config.Language;
+                         isCryptanalysis = roomInfo.Config.IsCryptanalysis;
+                         sameQuestionsForEveryone = roomInfo.Config.SameQuestionsForEveryone;
+                         
+                         // Sync Topics
+                         selectedTopics = roomInfo.Config.QuestionsPerTopicMap ?? new Dictionary<string, int>();
+                         selectedCustomQuestionIds = roomInfo.Config.CustomQuestionIds ?? new List<string>();
+                         // Sync Custom Questions selection in UI? 
+                         StateHasChanged();
+                     }
+                } 
+                catch (Exception ex) 
+                {
+                    Console.WriteLine("Error syncing config: " + ex.Message);
+                }
             }
             else
             {
@@ -583,5 +1235,10 @@
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public async ValueTask DisposeAsync()
+    {
+        if (_timer != null) _timer.Dispose();
+    }
+
+ 
 }

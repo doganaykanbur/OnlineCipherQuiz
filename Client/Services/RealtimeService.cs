@@ -53,11 +53,17 @@ namespace CipherQuiz.Client.Services
         }
 
         // Admin Methods
-        public async Task<CreateRoomResult> CreateRoom(string name, string adminName) 
-            => await Hub.InvokeAsync<CreateRoomResult>("CreateRoom", name, adminName);
+        public async Task<CreateRoomResult> CreateRoom(string name, string password, string language, List<string>? customQuestionIds = null, bool isCryptanalysis = false) 
+            => await Hub.InvokeAsync<CreateRoomResult>("CreateRoom", name, password, language, customQuestionIds, isCryptanalysis);
+
+        public async Task<bool> ValidateMasterPassword(string password)
+            => await Hub.InvokeAsync<bool>("ValidateMasterPassword", password);
 
         public async Task UpdateConfig(string roomCode, string token, QuizConfig config)
             => await Hub.InvokeAsync("UpdateConfig", roomCode, token, config);
+
+        public async Task<Room?> GetRoomInfo(string roomCode, string token)
+            => await Hub.InvokeAsync<Room?>("GetRoomInfo", roomCode, token);
 
         public async Task StartQuiz(string roomCode, string token)
             => await Hub.InvokeAsync("StartQuiz", roomCode, token);
@@ -89,20 +95,22 @@ namespace CipherQuiz.Client.Services
         public async Task<List<QuestionState>> GetParticipantDetails(string roomCode, string token, string pid)
             => await Hub.InvokeAsync<List<QuestionState>>("GetParticipantDetails", roomCode, token, pid);
 
-        // Participant Methods
-        public async Task<string> RequestJoin(string roomCode, string displayName, string? pid = null)
-            => await Hub.InvokeAsync<string>("RequestJoin", roomCode, displayName, pid);
+        public async Task CheckTime(string roomCode)
+            => await Hub.InvokeAsync("CheckTime", roomCode);
 
-        public async Task<bool> JoinRoom(string roomCode, string displayName, string pid)
+        // Participant Methods
+        public async Task<JoinRoomResult> RequestJoin(string roomCode, string displayName, string? pid = null)
+            => await Hub.InvokeAsync<JoinRoomResult>("RequestJoin", roomCode, displayName, pid);
+
+        public async Task<JoinRoomResult> JoinRoom(string roomCode, string displayName, string pid)
         {
             try
             {
-                await RequestJoin(roomCode, displayName, pid);
-                return true;
+                return await RequestJoin(roomCode, displayName, pid);
             }
-            catch
+            catch (Exception ex)
             {
-                return false;
+                return new JoinRoomResult { Success = false, Message = ex.Message };
             }
         }
 

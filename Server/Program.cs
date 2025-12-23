@@ -12,6 +12,7 @@ builder.Services.AddSignalR();
 
 builder.Services.AddSingleton<IRoomStore, InMemoryRoomStore>();
 builder.Services.AddSingleton<IQuestionEngine, QuestionEngine>();
+builder.Services.AddSingleton<CustomQuestionStore>();
 builder.Services.AddScoped<ResultExportService>();
 
 var app = builder.Build();

@@ -16,7 +16,7 @@ namespace CipherQuiz.Server.Controllers
         }
 
         [HttpGet("practice")]
-        public ActionResult<List<QuestionState>> GetPracticeSet([FromQuery] int count = 5)
+        public async Task<ActionResult<List<QuestionState>>> GetPracticeSet([FromQuery] int count = 5, [FromQuery] string language = "tr")
         {
             var map = new Dictionary<string, int>
             {
@@ -26,9 +26,10 @@ namespace CipherQuiz.Server.Controllers
             var config = new QuizConfig
             {
                 QuestionsPerTopicMap = map,
-                MistakesPerQuestion = 3
+                MistakesPerQuestion = 3,
+                Language = language
             };
-            return _engine.BuildSet(config);
+            return await _engine.BuildSet(config, language);
         }
     }
 }

@@ -1,6 +1,7 @@
 using CipherQuiz.Server.Services;
 using CipherQuiz.Shared;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Configuration;
 
 namespace CipherQuiz.Server.Hubs
 {
@@ -8,27 +9,45 @@ namespace CipherQuiz.Server.Hubs
     {
         private readonly IRoomStore _roomStore;
         private readonly IQuestionEngine _questionEngine;
+        private readonly IConfiguration _configuration;
 
-        public QuizHub(IRoomStore roomStore, IQuestionEngine questionEngine)
+        public QuizHub(IRoomStore roomStore, IQuestionEngine questionEngine, IConfiguration configuration)
         {
             _roomStore = roomStore;
             _questionEngine = questionEngine;
+            _configuration = configuration;
         }
 
         // --- Admin Methods ---
 
-        public async Task<CreateRoomResult> CreateRoom(string roomName, string adminDisplayName)
+        public async Task<bool> ValidateMasterPassword(string password)
         {
+            var masterPassword = _configuration["MasterPassword"] ?? "SiberVatan";
+             return await Task.FromResult(password == masterPassword);
+        }
+
+        public async Task<CreateRoomResult> CreateRoom(string roomName, string password, string language = "tr", List<string>? customQuestionIds = null, bool isCryptanalysis = false)
+        {
+            var masterPassword = _configuration["MasterPassword"] ?? "SiberVatan";
+            if (password != masterPassword)
+            {
+                throw new HubException("Invalid Password");
+            }
+
             var room = new Room
             {
                 Code = GenerateRoomCode(),
                 Name = roomName,
+                AdminName = "Yönetici", // Default name
                 AdminToken = Guid.NewGuid().ToString(),
                 State = RoomState.Lobby,
                 Config = new QuizConfig 
                 { 
                     Topics = new List<string> { "Caesar", "Vigenere" },
-                    QuestionsPerTopicMap = new Dictionary<string, int> { { "Caesar", 2 }, { "Vigenere", 2 } }
+                    QuestionsPerTopicMap = new Dictionary<string, int> { { "Caesar", 2 }, { "Vigenere", 2 } },
+                    Language = language,
+                    CustomQuestionIds = customQuestionIds ?? new List<string>(),
+                    IsCryptanalysis = isCryptanalysis
                 }
             };
 
@@ -55,16 +74,50 @@ namespace CipherQuiz.Server.Hubs
             if (room == null || room.State != RoomState.Lobby) return;
 
             // Generate questions for each participant
+            // Generate questions
+            List<QuestionState>? masterQuestions = null;
+            if (room.Config.SameQuestionsForEveryone)
+            {
+                // Generate once for everyone
+                masterQuestions = await _questionEngine.BuildSet(room.Config, room.Config.Language);
+            }
+
             foreach (var p in room.Participants.Where(x => x.IsApproved))
             {
-                var questions = _questionEngine.BuildSet(room.Config);
+                List<QuestionState> questions;
+                if (masterQuestions != null)
+                {
+                    // Clone for each participant so they track their own state (Attempts, IsSolved)
+                    questions = masterQuestions.Select(q => new QuestionState 
+                    {
+                        Id = Guid.NewGuid().ToString(), // Unique ID per participant instance to track stats individually? 
+                        // Actually, tracking by QuestionId global is fine, but Solved state is inside QuestionState?
+                        // Yes, QuestionState has 'IsSolved', 'UserAnswer'. We definitely need DEEP COPY.
+                        Topic = q.Topic,
+                        Prompt = q.Prompt,
+                        InputHint = q.InputHint,
+                        InputType = q.InputType,
+                        Data = q.Data, // Dictionary ref is fine if read-only
+                        CorrectAnswer = q.CorrectAnswer,
+                        Position = q.Position,
+                        Total = q.Total,
+                        RemainingScore = q.RemainingScore, // Reset score logic
+                        Attempts = 0
+                    }).ToList();
+                }
+                else
+                {
+                    questions = await _questionEngine.BuildSet(room.Config, room.Config.Language);
+                }
+
                 var pState = new ParticipantQuizState
                 {
                     ParticipantId = p.ParticipantId,
                     DisplayName = p.DisplayName,
                     Questions = questions,
                     CurrentIndex = 0,
-                    Score = 0
+                    Score = 0,
+                    Language = room.Config.Language
                 };
                 room.Quiz[p.ParticipantId] = pState;
             }
@@ -84,6 +137,8 @@ namespace CipherQuiz.Server.Hubs
 
             room.State = RoomState.Finished;
             await _roomStore.UpdateRoomAsync(room);
+            await _roomStore.ArchiveRoomAsync(room);
+            await BroadcastScoreboard(room);
             await Clients.Group(roomCode).SendAsync("QuizFinished");
         }
 
@@ -97,6 +152,12 @@ namespace CipherQuiz.Server.Hubs
             await BroadcastParticipantList(room, Context.ConnectionId);
             await BroadcastScoreboard(room, Context.ConnectionId);
             return room.State;
+        }
+
+        public async Task<Room?> GetRoomInfo(string roomCode, string adminToken)
+        {
+            var room = await ValidateAdmin(roomCode, adminToken);
+            return room;
         }
 
         public async Task Approve(string roomCode, string adminToken, string participantId)
@@ -135,6 +196,9 @@ namespace CipherQuiz.Server.Hubs
             // Notify all participants
             await Clients.Group(roomCode).SendAsync("RoomClosed");
             
+            // Archive before removing
+            await _roomStore.ArchiveRoomAsync(room);
+
             // Remove from store
             await _roomStore.RemoveRoomAsync(roomCode);
         }
@@ -169,7 +233,8 @@ namespace CipherQuiz.Server.Hubs
             if (p != null)
             {
                 room.Participants.Remove(p);
-                await Clients.Client(p.ConnectionId).SendAsync("Kicked", "Yönetici tarafından atıldınız.");
+                var msg = room.Config.Language == "en" ? "You have been kicked by the admin." : "Yönetici tarafından atıldınız.";
+                await Clients.Client(p.ConnectionId).SendAsync("Kicked", msg);
                 await BroadcastParticipantList(room);
             }
         }
@@ -188,10 +253,10 @@ namespace CipherQuiz.Server.Hubs
 
         // --- Participant Methods ---
 
-        public async Task<string> RequestJoin(string roomCode, string displayName, string? participantId = null)
+        public async Task<JoinRoomResult> RequestJoin(string roomCode, string displayName, string? participantId = null)
         {
             var room = await _roomStore.GetRoomAsync(roomCode);
-            if (room == null) throw new HubException("Room not found");
+            if (room == null) return new JoinRoomResult { Success = false, Message = "Room not found" };
 
             // Check if exists
             if (!string.IsNullOrEmpty(participantId))
@@ -203,7 +268,13 @@ namespace CipherQuiz.Server.Hubs
                     existing.DisplayName = displayName; // Update name if changed
                     await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
                     await _roomStore.UpdateRoomAsync(room);
-                    return existing.ParticipantId;
+                    return new JoinRoomResult 
+                    { 
+                        Success = true, 
+                        Message = existing.ParticipantId, 
+                        Language = room.Config.Language,
+                        RoomName = room.Name 
+                    };
                 }
             }
 
@@ -223,7 +294,13 @@ namespace CipherQuiz.Server.Hubs
             await Clients.Group(roomCode + "_Admin").SendAsync("ReceiveJoinRequest", Context.ConnectionId, displayName);
             await BroadcastParticipantList(room);
 
-            return p.ParticipantId;
+            return new JoinRoomResult 
+            { 
+                Success = true, 
+                Message = p.ParticipantId,
+                Language = room.Config.Language,
+                RoomName = room.Name
+            };
         }
 
         public async Task<ResumeStatus> ResumeParticipant(string roomCode, string participantId)
@@ -255,11 +332,13 @@ namespace CipherQuiz.Server.Hubs
             var room = await _roomStore.GetRoomAsync(roomCode);
             if (room == null) return null;
             
-            if (room.Quiz.TryGetValue(participantId, out var state))
+            if (room.Quiz.TryGetValue(participantId, out var pState))
             {
-                state.StartUtc = room.StartUtc;
-                state.TimeLimitMinutes = room.Config.TimeLimitMinutes;
-                return state;
+                pState.StartUtc = room.StartUtc;
+                pState.TimeLimitMinutes = room.Config.TimeLimitMinutes;
+                pState.Language = room.Config.Language;
+                pState.IsRoomFinished = room.State == RoomState.Finished;
+                return pState;
             }
             return null;
         }
@@ -361,10 +440,8 @@ namespace CipherQuiz.Server.Hubs
                 else
                 {
                     q.Attempts++;
-                    if (q.Attempts == 1 && q.RemainingScore > 0)
-                    {
-                        q.RemainingScore = Math.Max(0, q.RemainingScore * 0.6); // penalty on first mistake
-                    }
+                    // Removed penalty on first mistake as requested.
+                    // if (q.Attempts == 1 && q.RemainingScore > 0) ...
                     // Logic: 2 strikes allowed. 2nd mistake is fatal.
                     if (q.Attempts >= 2)
                     {
@@ -466,7 +543,7 @@ namespace CipherQuiz.Server.Hubs
             {
                 DisplayName = qs.DisplayName,
                 Score = qs.Score,
-                IsFinished = qs.CurrentIndex >= qs.Questions.Count,
+                IsFinished = qs.CurrentIndex >= qs.Questions.Count || room.State == RoomState.Finished,
                 CurrentQuestionIndex = qs.CurrentIndex + 1
             }).OrderByDescending(x => x.Score).ToList();
 
@@ -475,6 +552,34 @@ namespace CipherQuiz.Server.Hubs
             else
                 await Clients.Client(connectionId).SendAsync("ScoreboardUpdated", scores);
             // Also send to participants if desired, usually only at end or top 3
+        }
+
+        public async Task CheckTime(string roomCode) // Called periodically by client or admin
+        {
+            var room = await _roomStore.GetRoomAsync(roomCode);
+            if (room != null && room.State == RoomState.Running && room.StartUtc.HasValue)
+            {
+                var elapsed = DateTime.UtcNow - room.StartUtc.Value;
+                if (elapsed.TotalMinutes >= room.Config.TimeLimitMinutes)
+                {
+                    // Mark all active participants as finished
+                    bool changed = false;
+                    foreach(var p in room.Participants)
+                    {
+                        if (!p.IsFinished) 
+                        {
+                            p.IsFinished = true;
+                            changed = true;
+                        }
+                    }
+                    if (changed)
+                    {
+                        await _roomStore.UpdateRoomAsync(room);
+                        await BroadcastScoreboard(room);
+                        await BroadcastParticipantList(room);
+                    }
+                }
+            }
         }
     }
 }

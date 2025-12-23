@@ -87,7 +87,7 @@ namespace CipherQuiz.Server.Services
                 RoomName = room.Name,
                 StartedAtUtc = room.StartUtc ?? DateTime.UtcNow,
                 GeneratedAtUtc = DateTime.UtcNow,
-                DurationSeconds = room.Config.DurationSeconds,
+                DurationSeconds = room.Config.TimeLimitMinutes * 60,
                 Topics = room.Config.Topics ?? new List<string>(),
                 Participants = participants,
                 TopicStats = topicStats

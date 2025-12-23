@@ -5,13 +5,26 @@ namespace CipherQuiz.Shared
 {
     public class QuizConfig
     {
-        public int DurationSeconds { get; set; } = 300;
-        public int TimeLimitMinutes { get; set; } = 20; // Default 20 mins
-        public int QuestionsPerTopic { get; set; } = 2;
         public List<string> Topics { get; set; } = new();
         public Dictionary<string, int> QuestionsPerTopicMap { get; set; } = new();
-        public int MistakesPerQuestion { get; set; } = 3;
-        public string Difficulty { get; set; } = "Medium"; // Easy, Medium, Hard
+        public int MistakesPerQuestion { get; set; } = 2;
+        public int Difficulty { get; set; } = 1;
+        public int TimeLimitMinutes { get; set; } = 30;
+        public string Language { get; set; } = "tr";
+        public List<string> CustomQuestionIds { get; set; } = new();
+        public bool IsCryptanalysis { get; set; } = false;
+        public bool SameQuestionsForEveryone { get; set; } = false;
+    }
+
+    public class CustomQuestion
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Topic { get; set; } = "Caesar"; 
+        public string Mode { get; set; } = "Encrypt"; // Encrypt or Decrypt
+        public string Key { get; set; } = "";
+        public string Text { get; set; } = ""; 
+        public bool IsAnalysis { get; set; } = false;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 
     public enum RoomState
@@ -25,6 +38,7 @@ namespace CipherQuiz.Shared
     {
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string AdminName { get; set; } = "Yönetici";
         public string AdminToken { get; set; } = string.Empty;
 
         public QuizConfig Config { get; set; } = new();
@@ -66,6 +80,8 @@ namespace CipherQuiz.Shared
 
         public DateTime? StartUtc { get; set; }
         public int TimeLimitMinutes { get; set; }
+        public string Language { get; set; } = "tr";
+        public bool IsRoomFinished { get; set; }
     }
 
     public class QuestionState
@@ -98,5 +114,13 @@ namespace CipherQuiz.Shared
         public string Type { get; set; } = string.Empty; // copy, paste, blur, etc.
         public string Content { get; set; } = string.Empty;
         public DateTime TimestampUtc { get; set; }
+    }
+
+    public class JoinRoomResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string Language { get; set; } = "tr";
+        public string RoomName { get; set; } = string.Empty;
     }
 }
